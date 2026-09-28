@@ -78,6 +78,15 @@ callbacks and client pointers. Changes between executions take effect without
 rebuilding or invalidating cached callterm slots. Clients synchronize any shared
 mutable services. Registry mutation during execution remains unsupported.
 
+## World-state restrictions in callterms
+
+Callterms and report callbacks must not delete facts while decomposition is in
+progress. Do not remove rows, clear fact tables or reset/replace the world state
+from a callback. Queue removals and apply them after decomposition returns, when
+no other decomposition is using that world state. This is a planner assumption,
+not a runtime-enforced check, and also applies to deferred method expansion.
+See the [world-state decomposition contract](../HTNFramework/src/Translator/HTNGeneratedPlannerInterface.md#world-state-lifetime-during-decomposition).
+
 ## Migration and ABI
 
 Remove `SetMissingCallTermPolicy` calls on bindings. Assign the execution's policy

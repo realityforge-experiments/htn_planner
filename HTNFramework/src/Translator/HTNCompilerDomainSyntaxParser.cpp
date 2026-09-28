@@ -294,22 +294,27 @@ AST::ConditionPtr Condition(const Form& inForm, uint32_t inFileIndex)
     size_t Index = 0;
     if (Is(Items[Index], Type::QUESTION_MARK))
     {
-        Result->Kind = AST::ConditionKind::Call;
-        Result->Output = Argument(Items, Index, inFileIndex);
-        if (Error.HasError()) return {};
-        const Form& Call = At(Items, Index);
-        if (!Call.IsList || Call.Items.empty() || !Is(Call.Items[0], Type::CALL))
+        Invalid(HTNParserErrorCode::ImplicitAssignment, HTNImplicitAssignmentDiagnostic);
+        return {};
+    }
+    else if (Is(Items[Index], Type::ASSIGN))
+    {
+        Result->Kind = AST::ConditionKind::Assignment;
+        ++Index;
+        if (Index >= Items.size() || !Is(Items[Index], Type::QUESTION_MARK))
         {
-            Invalid(HTNParserErrorCode::ExpectedBoundCall, "Expected bound call condition");
+            Invalid(HTNParserErrorCode::InvalidAssignment, HTNInvalidAssignmentDiagnostic);
             return {};
         }
-        Result->Id = Identifier(At(Call.Items, 1), inFileIndex);
-        for (size_t I = 2; I < Call.Items.size();)
+        Result->Output = Argument(Items, Index, inFileIndex);
+        if (Error.HasError()) return {};
+        if (Index >= Items.size())
         {
-            Result->Arguments.push_back(Argument(Call.Items, I, inFileIndex));
-            if (Error.HasError()) return {};
+            Invalid(HTNParserErrorCode::InvalidAssignment, HTNInvalidAssignmentDiagnostic);
+            return {};
         }
-        if (Index + 1 != Items.size()) Invalid(HTNParserErrorCode::UnexpectedBoundCallSyntax, "Unexpected bound call condition syntax");
+        Result->Arguments.push_back(Argument(Items, Index, inFileIndex));
+        if (Index != Items.size()) Invalid(HTNParserErrorCode::InvalidAssignment, HTNInvalidAssignmentDiagnostic);
     }
     else if (Is(Items[Index], Type::CALL))
     {

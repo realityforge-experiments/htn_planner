@@ -259,4 +259,58 @@
             (generated_number ?out_value)
         )
     )
+
+    (:method (assignment_values) top_level_method
+        (success
+            (and
+                (= ?kind main_threat)
+                (= ?number (+ 2 3))
+                (= ?copy ?number)
+                (= ?result (call assignment_probe ?copy))
+                (= ?flag false)
+            )
+            ((!assignment_values ?kind ?number ?result ?flag))
+        )
+    )
+
+    (:method (assignment_backtracking) top_level_method
+        (success
+            (and
+                (assignment_candidate ?candidate)
+                (= ?value (call assignment_probe ?candidate))
+                (== ?value 3)
+            )
+            ((!assignment_result ?value))
+        )
+    )
+
+    (:method (assignment_nested_calls) top_level_method
+        (success
+            (and (= ?value (+ (call assignment_probe 1) (call assignment_probe 2))))
+            ((!assignment_result ?value))
+        )
+    )
+
+    (:method (assignment_failure) top_level_method
+        (failed (and (= ?value (/ 1 0))) ((!unexpected ?value)))
+        (fallback (and (= ?value 9)) ((!assignment_result ?value)))
+    )
+
+    (:method (assignment_ordered_failure) top_level_method
+        (arithmetic_failure (and (= ?value (+ (/ 1 0) (call assignment_probe 1)))) ((!unexpected ?value)))
+        (type_failure (and (= ?value (+ false (call assignment_probe 1)))) ((!unexpected ?value)))
+        (argument_failure (and (= ?value (call assignment_probe (/ 1 0) (call assignment_probe 1)))) ((!unexpected ?value)))
+        (fallback (and (= ?value 9)) ((!assignment_result ?value)))
+    )
+
+    (:method (assignment_axiom) top_level_method
+        (success (and (#assignment_local ?result)) ((!assignment_result ?result)))
+    )
+    (:axiom (assignment_local ?out_result)
+        (and
+            (= ?local 2)
+            (assignment_candidate ?out_result)
+            (== ?out_result ?local)
+        )
+    )
 )

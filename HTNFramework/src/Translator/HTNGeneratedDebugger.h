@@ -278,6 +278,7 @@ private:
         case HTN_CONDITION_ALT: return NodeKind::Alt;
         case HTN_CONDITION_NOT: return NodeKind::Not;
         case HTN_CONDITION_CALL: return NodeKind::Call;
+        case HTN_CONDITION_ASSIGNMENT:
         case HTN_CONDITION_CALL_BIND: return NodeKind::CallBind;
         case HTN_CONDITION_BUILTIN_COMPARISON: return NodeKind::BuiltinComparison;
         case HTN_CONDITION_BUILTIN_LIST_SPLIT: return NodeKind::BuiltinListSplit;
@@ -321,6 +322,7 @@ private:
         case HTN_CONDITION_ALT: return "alt";
         case HTN_CONDITION_NOT: return "not";
         case HTN_CONDITION_CALL: return "call";
+        case HTN_CONDITION_ASSIGNMENT: return "=";
         case HTN_CONDITION_CALL_BIND: return "call-bind";
         case HTN_CONDITION_BUILTIN_COMPARISON: return "comparison";
         case HTN_CONDITION_BUILTIN_LIST_SPLIT: return "split_list";
@@ -459,7 +461,12 @@ private:
             AddTitleToken(ioNode, Node::TitleTokenKind::Result, "call");
             AddTitleToken(ioNode, Node::TitleTokenKind::Result, ResolveString(inDomain, inCondition.id, "call"));
             break;
+        case HTN_CONDITION_ASSIGNMENT:
+            AddTitleToken(ioNode, Node::TitleTokenKind::Result, "=");
+            AddValueTitleToken(inDomain, inCondition.output_value, ioNode);
+            break;
         case HTN_CONDITION_CALL_BIND:
+            AddTitleToken(ioNode, Node::TitleTokenKind::Result, "=");
             if (inCondition.output_value != HTN_GENERATED_NO_INDEX)
                 AddValueTitleToken(inDomain, inCondition.output_value, ioNode);
             AddTitleToken(ioNode, Node::TitleTokenKind::Result, "call");
@@ -486,6 +493,7 @@ private:
             inCondition.kind == HTN_CONDITION_AXIOM ||
             inCondition.kind == HTN_CONDITION_CALL ||
             inCondition.kind == HTN_CONDITION_CALL_BIND ||
+            inCondition.kind == HTN_CONDITION_ASSIGNMENT ||
             inCondition.kind == HTN_CONDITION_BUILTIN_COMPARISON ||
             inCondition.kind == HTN_CONDITION_BUILTIN_LIST_SPLIT)
         {

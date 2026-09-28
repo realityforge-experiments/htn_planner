@@ -165,7 +165,7 @@ TEST(HTNMissingCallTermTest, GeneratedCallsReportProvenanceAndPreserveFailureSem
                     EXPECT_NE(Client.File.find("missing_callterms.domain"), std::string::npos);
                     const size_t Method = Text.find("(:method (" + Entry + ")");
                     ASSERT_NE(Method, std::string::npos);
-                    const size_t Call = Text.find(Entry == "binding" ? "(?value" : "(call probe)", Method);
+                    const size_t Call = Text.find(Entry == "binding" ? "(= ?value" : "(call probe)", Method);
                     ASSERT_NE(Call, std::string::npos);
                     const auto Position = Source.GetPosition(Call);
                     EXPECT_EQ(Client.Line, static_cast<uint32_t>(Position.Line));

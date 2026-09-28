@@ -24,7 +24,8 @@ typedef enum HTNGeneratedConditionKind
     HTN_CONDITION_CALL = 6,
     HTN_CONDITION_CALL_BIND = 7,
     HTN_CONDITION_BUILTIN_COMPARISON = 8,
-    HTN_CONDITION_BUILTIN_LIST_SPLIT = 9
+    HTN_CONDITION_BUILTIN_LIST_SPLIT = 9,
+    HTN_CONDITION_ASSIGNMENT = 10
 } HTNGeneratedConditionKind;
 
 typedef enum HTNGeneratedBuiltinComparisonOperator

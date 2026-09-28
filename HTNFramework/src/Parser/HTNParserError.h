@@ -21,6 +21,8 @@ enum class HTNParserErrorCode : uint8_t
     ExpectedCondition,
     InvalidNotCondition,
     InvalidComparisonArity,
+    InvalidAssignment,
+    ImplicitAssignment,
     ExpectedBoundCall,
     UnexpectedBoundCallSyntax,
     QualifiedFact,
@@ -44,6 +46,9 @@ enum class HTNParserErrorCode : uint8_t
     ExpectedIncludeEnd,
     MisplacedInclude
 };
+
+inline constexpr const char* HTNInvalidAssignmentDiagnostic = "Assignment requires a variable destination and exactly one value expression";
+inline constexpr const char* HTNImplicitAssignmentDiagnostic = "Implicit call-result binding is no longer supported; use an explicit assignment condition";
 
 struct HTNParserError
 {

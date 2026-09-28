@@ -126,3 +126,11 @@ Rebuild consumers to use it. Unbound arguments are now rejected rather than stor
 
 See the [fact-writing release notes](RELEASE_NOTES_WRITE_FACT.md) for ownership
 migration requirements and the recorded development validation.
+
+**World-state contract:** facts must not be deleted while a decomposition is in
+progress, including from callterms or custom converters invoked during planning.
+Do not remove rows, clear fact tables or reset/replace the world state until the
+decomposition has returned and no other decomposition uses that world state.
+This planner assumption also applies to deferred method expansion; it is not
+enforced by `WriteFact` or its transactional conversion behavior. Supported fact
+insertion does not grant permission to delete facts during decomposition.

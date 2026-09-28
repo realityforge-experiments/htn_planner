@@ -20,3 +20,5 @@ instructions and engine integration overview.
 - [Missing callterm policy](MISSING_CALLTERMS.md)
 - [Method overloads](METHOD_OVERLOADS.md)
 - [Axiom overloads and backtracking](AXIOM_OVERLOADS.md)
+
+- [Variable declaration, assignment and migration](ASSIGNMENT.md)

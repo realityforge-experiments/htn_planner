@@ -3,6 +3,17 @@
 All notable changes to HTN Planner are documented in this file. Releases follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Explicit variable declarations (breaking domain syntax change)
+
+- Declare and initialize fresh local variables with `(= ?value expression)`.
+- Reject implicit call-result binding and destinations already declared or used.
+- Support literal, variable, arithmetic and callterm initializers with backtracking.
+- Update generated debugger assignment display and compiler regression tests.
+- Migrate domains and regenerate their C source; C function signatures and atom
+  layout are unchanged. See [migration instructions](docs/ASSIGNMENT.md).
+
 ## 2.0.2 - 2026-09-25
 
 - Fix missing `HTNAtom_SetInt` and `HTNAtom_SetFloat` exports in RuntimeBridge.

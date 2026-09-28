@@ -295,3 +295,10 @@ Applicable notices are included when producing an SDK package.
 Licensed under the [MIT License](LICENSE). See [copyright and attribution](NOTICE.md)
 and [third-party notices](THIRD_PARTY_NOTICES.md) before redistributing binaries or
 SDK packages.
+
+## Variable declarations
+
+Use `(= ?value expression)` to declare and initialize a fresh local variable.
+The compiler rejects destinations already declared or used in the same path.
+`==` remains equality comparison; implicit `(?value (call ...))` binding is rejected.
+See [assignment syntax and migration](docs/ASSIGNMENT.md).

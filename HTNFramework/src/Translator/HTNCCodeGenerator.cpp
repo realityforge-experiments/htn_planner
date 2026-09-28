@@ -88,6 +88,7 @@ const char* ConditionKindCName(const HTNGeneratedConditionKind inKind)
     case HTN_CONDITION_NOT: return "HTN_CONDITION_NOT";
     case HTN_CONDITION_CALL: return "HTN_CONDITION_CALL";
     case HTN_CONDITION_CALL_BIND: return "HTN_CONDITION_CALL_BIND";
+    case HTN_CONDITION_ASSIGNMENT: return "HTN_CONDITION_ASSIGNMENT";
     case HTN_CONDITION_BUILTIN_COMPARISON: return "HTN_CONDITION_BUILTIN_COMPARISON";
     case HTN_CONDITION_BUILTIN_LIST_SPLIT: return "HTN_CONDITION_BUILTIN_LIST_SPLIT";
     default: return "HTN_CONDITION_INVALID";
@@ -192,6 +193,7 @@ ConditionAnalysis AnalyzeCondition(const HTNCompilerIR& inBuilder, const uint32 
                 if (IsOutputParameterName(inBuilder.Strings.Values[inBuilder.Values[Axiom->FirstParameter + I].Text]))
                     Bind(inBuilder.Values[Condition.FirstArgument + I]);
         break;
+    case HTN_CONDITION_ASSIGNMENT:
     case HTN_CONDITION_CALL_BIND:
         if (Condition.OutputValue != kNoIndex) Bind(inBuilder.Values[Condition.OutputValue]);
         break;
@@ -266,6 +268,7 @@ void CollectGeneratedConditionWrites(const HTNCompilerIR& inBuilder,
         }
         break;
 
+    case HTN_CONDITION_ASSIGNMENT:
     case HTN_CONDITION_CALL_BIND:
         if (Condition.OutputValue != kNoIndex && Condition.OutputValue < inBuilder.Values.size())
         {
@@ -999,6 +1002,27 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
 
     const ConditionRecord& Condition = B.Conditions[inCondition];
     W.DomainExpressionComment(Condition.DomainExpression);
+    if (Condition.Kind == HTN_CONDITION_ASSIGNMENT)
+    {
+        const auto& Output = B.Values[Condition.OutputValue];
+        const auto& Input = B.Values[Condition.FirstArgument];
+        W.Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
+        W.Out << "    {\n";
+        uint32 Temporary = 0u;
+        const std::string Reference = Input.Kind == HTNIRValueKind::Arithmetic
+            ? EmitGeneratedArithmeticValue(W, B, Input, inDomainSymbol, "assignment_" + std::to_string(inCondition), "        ", Temporary)
+            : BuildGeneratedValueAtomReference(B, Condition.FirstArgument, inDomainSymbol);
+        W.Out << "        const HTNAtom* assignment_value = " << Reference << ";\n";
+        W.Out << "        int condition_result = assignment_value && HTNAtom_IsBound(assignment_value) && HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, " << Output.VariableSlot << "u) == NULL;\n";
+        W.Out << "        if (condition_result) {\n";
+        W.Out << "            condition_result = HTNAtom_AssignCopy(&HTN_GENERATED_EXECUTION(context)->variables.values[" << Output.VariableSlot << "u], assignment_value);\n";
+        W.Out << "            if (condition_result) HTN_GENERATED_EXECUTION(context)->variables.bound_mask[" << (Output.VariableSlot >> 6u) << "u] |= (UINT64_C(1) << " << (Output.VariableSlot & 63u) << "u);\n";
+        W.Out << "        }\n";
+        W.Out << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, condition_result, 0);\n";
+        W.Out << "        if (condition_result) goto " << W.Label(inSuccess) << ";\n";
+        W.Out << "        goto " << W.Label(inFailure) << ";\n    }\n";
+        return;
+    }
     if (Condition.Kind == HTN_CONDITION_BUILTIN_COMPARISON)
     {
         if (Condition.ArgumentCount != 2u) { B.SetError("Built-in comparison must contain exactly two operands"); return; }
@@ -1140,12 +1164,22 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
     W.Out << "    {\n";
     if (Condition.ArgumentCount > 0u)
     {
+        std::vector<std::string> References;
+        uint32 Temporary = 0u;
+        for (uint32 I = 0; I < Condition.ArgumentCount; ++I)
+        {
+            const auto& Argument = B.Values[Condition.FirstArgument + I];
+            References.push_back(Argument.Kind == HTNIRValueKind::Arithmetic
+                ? EmitGeneratedArithmeticValue(W, B, Argument, inDomainSymbol,
+                    "condition_" + std::to_string(inCondition) + "_arg_" + std::to_string(I), "        ", Temporary)
+                : BuildGeneratedValueAtomReference(B, Condition.FirstArgument + I, inDomainSymbol));
+        }
         W.Out << "        const HTNAtom* call_arguments[" << Condition.ArgumentCount << "u] = {";
         for (uint32 I = 0u; I < Condition.ArgumentCount; ++I)
         {
             if (I > 0u)
                 W.Out << ", ";
-            W.Out << BuildGeneratedValueAtomReference(B, Condition.FirstArgument + I, inDomainSymbol);
+            W.Out << References[I];
         }
         W.Out << "};\n";
     }

@@ -9,11 +9,11 @@
     (:method (show_atom_list) top_level_method
         (print_constant_list
             (and
-                (?added (call list_add @demo_list "return"))
-                (?removed (call list_remove_at ?added 1))
-                (?element (call list_get ?removed 2))
-                (?size (call list_size ?added))
-                (?cleared (call list_clear ?removed))
+                (= ?added (call list_add @demo_list "return"))
+                (= ?removed (call list_remove_at ?added 1))
+                (= ?element (call list_get ?removed 2))
+                (= ?size (call list_size ?added))
+                (= ?cleared (call list_clear ?removed))
             )
             (
                 (!print_original @demo_list)
@@ -51,7 +51,7 @@
     (:method (split_list_empty_fails) top_level_method
         (unexpected
             (and
-                (?empty (call list_clear @split_list_single))
+                (= ?empty (call list_clear @split_list_single))
                 (split_list ?empty ?head ?tail)
             )
             (
