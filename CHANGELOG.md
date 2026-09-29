@@ -1,9 +1,9 @@
 # Changelog
 
-All notable changes to HTN Planner are documented in this file. Releases follow
-[Semantic Versioning](https://semver.org/).
+All notable changes to HTN Planner are documented in this file. Compatibility
+exceptions are called out explicitly in each release.
 
-## 2.0.3 - Pending engine validation
+## 2.0.3 - 2026-09-29
 
 **Breaking compatibility despite the patch version:** migrate assignments and
 regenerate/rebuild all domain modules and the host.

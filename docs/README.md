@@ -1,6 +1,6 @@
 # Documentation
 
-- [2.0.3 preparation and migration](RELEASE_2_0_3.md)
+- [2.0.3 release notes and migration](RELEASE_2_0_3.md)
 - [Nested callterm evaluation](RELEASE_NOTES_NESTED_CALLS.md)
 
 - [Compiler pipeline and IR](COMPILER_IR.md)

@@ -74,7 +74,7 @@ The hot reload demo validates definitions before invoking module lifecycle
 callbacks. Its headless self-test rejects a malformed fact-name table and checks
 unloading and recovery of the previous valid module.
 
-## Unreleased descriptor update
+## 2.0.3 descriptor update
 
 Initialization callterm validation extends `HTNGeneratedPlannerDefinition`.
 Regenerate domains and rebuild their host using matching headers. Current planner

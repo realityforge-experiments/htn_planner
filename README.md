@@ -14,7 +14,7 @@ The repository includes:
 - An editor, language server, hot reload example, tests and benchmarks.
 - A packageable Windows x64 SDK with CMake integration.
 
-Version **2.0.3** is being prepared for engine integration testing. It adds explicit
+Version **2.0.3** adds explicit
 variable declarations, fixes nested callterm evaluation, and supports initialization
 time callterm validation. **This update breaks compatibility despite its patch
 version:** migrate assignment syntax, regenerate domain C sources and rebuild the

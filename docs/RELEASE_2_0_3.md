@@ -1,6 +1,6 @@
-# HTN Planner 2.0.3 — pending engine validation
+# HTN Planner 2.0.3
 
-Prepared locally for integration testing; not tagged or published.
+Release date: 2026-09-29.
 Windows x64/MSVC remains the validated distribution target.
 
 **Compatibility warning:** despite the patch version, this update changes domain
@@ -42,12 +42,13 @@ Planner ABI values: plain `0x48540005`, instrumented `0x48550006`, profiling
 `HTNAtom` layout and RuntimeBridge function signatures/revision are unchanged from
 2.0.2; nevertheless use the matching rebuilt package throughout.
 
-## Engine acceptance before publication
+## Validation
 
-- Compile with the intended SDK variant.
-- Validate complete bindings successfully and exercise all three missing reasons.
-- Verify nested comparisons/arithmetic, planning and backtracking.
-- Check active-plan execution, debugger integration and engine-managed hot reload.
+- SDK: all eight variants, 24 consumer executions and eight object/export checks passed.
+- Incompatible CRT selections and unknown variants were rejected.
+- Public source suites: 226 Debug tests and 218 Release tests passed before export.
+- Engine integration: the maintainer confirmed successful compilation and operation.
+  Initialization validation helped identify callterms missing from daemon registrations.
 
-After integration passes, finalize the release notes, commit and tag the tested
-public checkout, then publish the validated SDK ZIP and its SHA-256.
+The engine confirmation does not claim separate manual coverage of every missing
+reason or hot reload scenario; automated tests cover the documented missing reasons.
