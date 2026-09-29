@@ -40,7 +40,7 @@ struct Value : Node
 };
 using ValuePtr = std::shared_ptr<const Value>;
 
-enum class ConditionKind : uint8_t { Fact, Axiom, Call, Comparison, Split, And, Or, Alt, Not };
+enum class ConditionKind : uint8_t { Fact, Axiom, Call, Assignment, Comparison, Split, And, Or, Alt, Not };
 struct Condition : Node
 {
     ConditionKind Kind = ConditionKind::And;

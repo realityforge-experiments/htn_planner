@@ -34,6 +34,24 @@ definition before unloading the domain module, then the runtime bridge.
 With the optional HTNIntegration implementation, destroy planning units and clear
 hook definitions first. DLL loading/reload/rollback remains the consumer's responsibility.
 
+## World-state lifetime during decomposition
+
+**Do not delete facts from the world state while a decomposition is in progress.**
+This is a planner assumption and a caller responsibility, not a runtime-enforced
+restriction. It applies to interpreted and generated planning, including callterms,
+client callbacks and other code accessing the same world state.
+
+Do not remove fact rows, clear fact tables or reset/replace the world state during
+that interval. Defer these operations until decomposition has returned and no
+other decomposition is using that world state. The same rule applies while
+expanding a deferred method call; deferred execution is not an exemption.
+
+This restriction does not prohibit supported fact insertion through `WriteFact`.
+It also does not imply that world-state mutations made by callterms are rolled
+back when planning backtracks. The restriction concerns decomposition, rather
+than the entire lifetime of the resulting plan: the host may remove facts between
+decompositions when no active decomposition uses that world state.
+
 ## ABI version
 
 The status enum is `HTNDecompositionStatus`, declared in

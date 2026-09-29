@@ -63,7 +63,7 @@
         (branch_new_query
             (and
                 (not (pathfind_state ?any_state ?inp_from_location ?inp_to_location ?any_query_id))
-                (?query_id (call request_path_from_to ?inp_from_location ?inp_to_location))
+                (= ?query_id (call request_path_from_to ?inp_from_location ?inp_to_location))
             )
             (
             )

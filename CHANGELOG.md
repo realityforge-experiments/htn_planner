@@ -3,6 +3,34 @@
 All notable changes to HTN Planner are documented in this file. Releases follow
 [Semantic Versioning](https://semver.org/).
 
+## 2.0.3 - Pending engine validation
+
+**Breaking compatibility despite the patch version:** migrate assignments and
+regenerate/rebuild all domain modules and the host.
+
+### Callterm evaluation and initialization validation
+
+- Evaluate nested callterms in comparisons and arithmetic instead of treating
+  their names as literal values. Preserve missing-call policies and exact source
+  locations. See [nested-call regression notes](docs/RELEASE_NOTES_NESTED_CALLS.md).
+- Add `HTNCallTermRegistry::ValidateGeneratedCallTerms` for explicit initialization
+  checks of missing registrations, bindings and instances without invoking calls.
+- Generated definitions expose call-site requirements in plain and instrumented
+  builds. Each original call site is reported once, including linked sources.
+- **Compatibility:** the planner descriptor ABI changes. Rebuild the host and
+  regenerate/recompile domain modules with matching headers; atom layout and
+  RuntimeBridge function signatures are unchanged. See
+  [initialization validation](docs/MISSING_CALLTERMS.md#initialization-validation-unreleased).
+
+### Explicit variable declarations (breaking domain syntax change)
+
+- Declare and initialize fresh local variables with `(= ?value expression)`.
+- Reject implicit call-result binding and destinations already declared or used.
+- Support literal, variable, arithmetic and callterm initializers with backtracking.
+- Update generated debugger assignment display and compiler regression tests.
+- Migrate domains and regenerate their C source; C function signatures and atom
+  layout are unchanged. See [migration instructions](docs/ASSIGNMENT.md).
+
 ## 2.0.2 - 2026-09-25
 
 - Fix missing `HTNAtom_SetInt` and `HTNAtom_SetFloat` exports in RuntimeBridge.

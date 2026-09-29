@@ -19,6 +19,7 @@
 #include <vector>
 
 class HTNCallTermBindingContext;
+struct HTNGeneratedPlannerDefinition;
 
 class HTNCallTermArguments
 {
@@ -125,6 +126,12 @@ public:
                     HTNCallTermFunction inFunction,
                     HTNCallTermSignature inSignature);
 
+    // Checks all call sites without executing them. Callback data is borrowed.
+    // False also indicates an invalid definition or a context from another registry.
+    HTN_NODISCARD bool ValidateGeneratedCallTerms(const HTNGeneratedPlannerDefinition& inDefinition,
+        const HTNCallTermBindingContext& inContext, HTNMissingCallTermCallback inCallback = nullptr,
+        void* inClientContext = nullptr) const;
+
     HTN_NODISCARD bool IsBound(const std::string& inID) const;
     HTN_NODISCARD const HTNCallTermFunction* Resolve(const std::string& inID) const;
     HTN_NODISCARD const HTNCallTermSignature* ResolveSignature(const std::string& inID) const;
@@ -141,6 +148,9 @@ private:
         std::size_t DaemonSlot = std::numeric_limits<std::size_t>::max();
         std::string DaemonID;
     };
+
+    static std::optional<HTNMissingCallTermReason> CheckEntry(const Entry* inEntry,
+        const HTNCallTermBindingContext* inContext, void*& outDaemon);
 
     static HTNAtomOwner InvokeEntry(const Entry* inEntry, const char* inName,
                                     const HTNCallTermBindingContext* inContext,

@@ -1,5 +1,9 @@
 # HTN SDK
 
+Version 2.0.3 requires assignment syntax migration and domain regeneration despite
+its patch version. Rebuild the host and modules with matching headers and binaries.
+See [2.0.3 migration](docs/RELEASE_2_0_3.md) before replacing an existing SDK.
+
 Windows x64, MSVC v143, C++20 clients and C11 generated domains.
 
 The eight variant IDs combine `Static` or `Dynamic` CRT linkage, `Debug` or

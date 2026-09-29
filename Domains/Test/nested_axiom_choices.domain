@@ -84,7 +84,7 @@
     (:axiom (not_choice ?out_value)
         (and (not (and (candidate ?out_value) (== ?out_value 3))) (candidate ?out_value)))
     (:axiom (effects ?out_value)
-        (and (call axiom_trace 0) (?prefix (call axiom_value))
+        (and (call axiom_trace 0) (= ?prefix (call axiom_value))
              (candidate ?out_value) (call axiom_trace ?out_value) (== ?prefix 42)))
     (:axiom (effects_outer ?out_value) (and (call axiom_trace 10) (#effects ?out_value)))
 

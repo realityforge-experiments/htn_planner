@@ -102,6 +102,8 @@ std::string FormatDomainCondition(const AST::Condition& inNode)
             return Invocation;
         return "(" + FormatDomainValueExpression(*inNode.GetOutputVariableNode()) + " " + Invocation + ")";
     }
+    if (inNode.Kind == AST::ConditionKind::Assignment)
+        return "(= " + FormatDomainValueExpression(*inNode.Output) + " " + FormatDomainValueExpression(*inNode.Arguments[0]) + ")";
     if (inNode.Kind == AST::ConditionKind::Comparison)
     {
         static constexpr const char* Operators[] = {"==", "!=", "<", "<=", ">", ">="};
@@ -296,6 +298,14 @@ public:
     ValueRecord MakeValueRecord(const AST::Value& inNode)
     {
         ValueRecord Record;
+        if (inNode.Kind == AST::ValueKind::Call)
+        {
+            const std::string File = inNode.FileIndex < SourceFiles.size() ? SourceFiles[inNode.FileIndex] : "<domain>";
+            SetError(File + "(" + std::to_string(inNode.Range.Begin.Line) + "," +
+                std::to_string(inNode.Range.Begin.Column) + "): error: Call expression '" +
+                FormatDomainValueExpression(inNode) + "' was not lowered to a runtime invocation");
+            return Record;
+        }
         Record.Kind = LowerValueKind(inNode.GetExpressionType());
         Record.Text = Strings.Add(HTNAtomToString(inNode.GetValue(), false));
         // Keep the original domain expression for debugger metadata. Runtime/prepared
@@ -367,6 +377,19 @@ public:
     ValueRecord BuildTaskArgument(const AST::Value& inNode,
                                   std::vector<TaskCallExpressionRecord>& ioCalls)
     {
+        if (inNode.Kind == AST::ValueKind::Arithmetic)
+        {
+            AST::Value Shell = inNode;
+            Shell.ArithmeticOperands.clear();
+            ValueRecord Record = MakeValueRecord(Shell);
+            Record.DebugText = Strings.Add(FormatDomainValueExpression(inNode));
+            for (const auto& Operand : inNode.ArithmeticOperands)
+            {
+                ValueRecord Prepared = BuildTaskArgument(*Operand, ioCalls);
+                ArithmeticExpressions[Record.ArithmeticExpression].Operands.push_back(std::move(Prepared));
+            }
+            return Record;
+        }
         if (inNode.Kind == AST::ValueKind::Call)
         {
             TaskCallExpressionRecord CallRecord;
@@ -408,9 +431,107 @@ public:
         return Slot;
     }
 
+    bool HasNestedAssignmentCall(const AST::ValuePtr& inValue, bool inRoot = true) const
+    {
+        if (!inRoot && inValue->Kind == AST::ValueKind::Call) return true;
+        for (const auto& Argument : inValue->CallArguments)
+            if (HasNestedAssignmentCall(Argument, false)) return true;
+        for (const auto& Operand : inValue->ArithmeticOperands)
+            if (HasNestedAssignmentCall(Operand, false)) return true;
+        return false;
+    }
+
+    AST::ValuePtr CaptureAssignmentValue(const AST::ValuePtr& inValue,
+                                         std::vector<AST::ConditionPtr>& outPrefix)
+    {
+        auto Variable = std::make_shared<AST::Value>();
+        Variable->Kind = AST::ValueKind::Variable;
+        Variable->Atom = HTNAtomOwner("$assignment_call_" + std::to_string(SyntheticTaskCallCount++));
+        Variable->Range = inValue->Range;
+        Variable->FileIndex = inValue->FileIndex;
+        auto Binding = std::make_shared<AST::Condition>();
+        Binding->Kind = AST::ConditionKind::Assignment;
+        Binding->Output = Variable;
+        Binding->Arguments.push_back(inValue);
+        Binding->Range = inValue->Range;
+        Binding->FileIndex = inValue->FileIndex;
+        outPrefix.push_back(Binding);
+        return Variable;
+    }
+
+    AST::ValuePtr PrepareAssignmentExpression(const AST::ValuePtr& inValue,
+                                              std::vector<AST::ConditionPtr>& outPrefix)
+    {
+        auto Value = std::make_shared<AST::Value>(*inValue);
+        for (auto& Argument : Value->CallArguments)
+            Argument = CaptureAssignmentValue(PrepareAssignmentExpression(Argument, outPrefix), outPrefix);
+        for (auto& Operand : Value->ArithmeticOperands)
+        {
+            // Validate each numeric operand before evaluating subsequent calls.
+            // Multiplication by one preserves its numeric type and value, including signed zero.
+            auto Checked = std::make_shared<AST::Value>();
+            Checked->Kind = AST::ValueKind::Arithmetic;
+            Checked->ArithmeticOp = AST::ArithmeticOperator::Multiply;
+            Checked->Range = Operand->Range;
+            Checked->FileIndex = Operand->FileIndex;
+            auto One = std::make_shared<AST::Value>();
+            One->Atom = HTNAtomOwner(int32{1});
+            auto Prepared = PrepareAssignmentExpression(Operand, outPrefix);
+            if (Prepared->Kind == AST::ValueKind::Call)
+                Prepared = CaptureAssignmentValue(Prepared, outPrefix);
+            Checked->ArithmeticOperands = {Prepared, One};
+            Operand = CaptureAssignmentValue(Checked, outPrefix);
+        }
+        return Value;
+    }
+
     uint32 AddCondition(const AST::ConditionPtr& inNode)
     {
         if (!inNode) return kNoIndex;
+        if (inNode->Kind != AST::ConditionKind::Assignment)
+        {
+            bool HasCalls = false;
+            for (const auto& Argument : inNode->Arguments)
+                HasCalls = HasCalls || HasNestedAssignmentCall(Argument, false);
+            if (HasCalls)
+            {
+                std::vector<AST::ConditionPtr> Prefix;
+                auto Condition = std::make_shared<AST::Condition>(*inNode);
+                for (auto& Argument : Condition->Arguments)
+                {
+                    // Comparisons and callterms read all operands. Capture them in
+                    // source order, so failure stops before subsequent invocations.
+                    // Fact/axiom/split output variables must remain bindable.
+                    if (inNode->Kind == AST::ConditionKind::Comparison || inNode->Kind == AST::ConditionKind::Call ||
+                        HasNestedAssignmentCall(Argument, false))
+                        Argument = CaptureAssignmentValue(PrepareAssignmentExpression(Argument, Prefix), Prefix);
+                }
+                Prefix.push_back(Condition);
+                auto Sequence = std::make_shared<AST::Condition>();
+                Sequence->Kind = AST::ConditionKind::And;
+                Sequence->Range = inNode->Range;
+                Sequence->FileIndex = inNode->FileIndex;
+                Sequence->Children = std::move(Prefix);
+                return AddCondition(Sequence);
+            }
+        }
+        if (inNode->Kind == AST::ConditionKind::Assignment && HasNestedAssignmentCall(inNode->Arguments[0]))
+        {
+            std::vector<AST::ConditionPtr> Prefix;
+            const auto Expression = PrepareAssignmentExpression(inNode->Arguments[0], Prefix);
+            if (!Prefix.empty())
+            {
+                auto Binding = std::make_shared<AST::Condition>(*inNode);
+                Binding->Arguments[0] = Expression;
+                Prefix.push_back(Binding);
+                auto Sequence = std::make_shared<AST::Condition>();
+                Sequence->Kind = AST::ConditionKind::And;
+                Sequence->Range = inNode->Range;
+                Sequence->FileIndex = inNode->FileIndex;
+                Sequence->Children = std::move(Prefix);
+                return AddCondition(Sequence);
+            }
+        }
 
         ConditionRecord Record;
         Record.DomainExpression = FormatDomainCondition(*inNode);
@@ -449,6 +570,27 @@ public:
             Record.FirstArgument = static_cast<uint32>(Values.size());
             for (const auto& Argument : inNode->GetArgumentNodes()) AddValue(*Argument);
             Record.ArgumentCount = static_cast<uint32>(Values.size()) - Record.FirstArgument;
+        }
+        else if (inNode->Kind == AST::ConditionKind::Assignment)
+        {
+            Record.OutputValue = AddValue(*inNode->Output);
+            const auto& Expression = *inNode->Arguments[0];
+            if (Expression.Kind == AST::ValueKind::Call)
+            {
+                Record.Kind = HTN_CONDITION_CALL_BIND;
+                SetSource(Record, Expression);
+                Record.Id = Strings.Add(HTNAtomToString(Expression.CallId->GetValue(), false));
+                Record.ResolvedIndex = AllocateCallTermSlot(Record.Id);
+                Record.FirstArgument = static_cast<uint32>(Values.size());
+                for (const auto& Argument : Expression.CallArguments) AddValue(*Argument);
+                Record.ArgumentCount = static_cast<uint32>(Values.size()) - Record.FirstArgument;
+            }
+            else
+            {
+                Record.Kind = HTN_CONDITION_ASSIGNMENT;
+                Record.FirstArgument = AddValue(Expression);
+                Record.ArgumentCount = 1u;
+            }
         }
         else if (inNode->Kind == AST::ConditionKind::Comparison)
         {
@@ -765,7 +907,7 @@ bool ValidateCallTermCondition(const HTNCompilerIR& inBuilder, uint32 inConditio
         return true;
     }
 
-    if (Condition.Kind == HTN_CONDITION_CALL_BIND) // callterm with return binding
+    if (Condition.Kind == HTN_CONDITION_CALL_BIND || Condition.Kind == HTN_CONDITION_ASSIGNMENT)
     {
         if (Condition.OutputValue == kNoIndex || Condition.OutputValue >= inBuilder.Values.size())
             return true;
@@ -847,6 +989,7 @@ bool ValidateGeneratedKinds(const HTNCompilerIR& inBuilder, std::string& outErro
         case HTN_CONDITION_NOT:
         case HTN_CONDITION_CALL:
         case HTN_CONDITION_CALL_BIND:
+        case HTN_CONDITION_ASSIGNMENT:
             break;
         case HTN_CONDITION_BUILTIN_LIST_SPLIT:
             if (Condition.Id > 2u)
@@ -968,6 +1111,11 @@ bool HTNBuildCompilerIR(const AST::Domain& inDomain,
     B.SourceFiles = inSourceFiles;
     B.RuntimeBacktrackingSupport = inRuntimeBacktrackingSupport;
     B.Build();
+    if (B.HasError())
+    {
+        outError = B.GetError();
+        return false;
+    }
     if (!ResolveCompileTimeReferences(B))
     {
         outError = B.GetError();

@@ -18,6 +18,7 @@ enum class HTNTokenType : uint8
     AMPERSAND,
     AT,
 
+    ASSIGN,
     EQUAL_EQUAL,
     NOT_EQUAL,
     LESS,

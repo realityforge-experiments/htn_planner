@@ -14,8 +14,11 @@ The repository includes:
 - An editor, language server, hot reload example, tests and benchmarks.
 - A packageable Windows x64 SDK with CMake integration.
 
-Version **2.0.2** fixes missing RuntimeBridge numeric exports for domain DLLs. See the [2.0.2 release notes](docs/RELEASE_2_0_2.md); rebuild the host, bridge and domain modules together. It also includes [transactional fact conversion](docs/RELEASE_NOTES_WRITE_FACT.md). Upgrading from 1.x requires migration. See the [release notes and migration guide](docs/RELEASE_2_0_0.md). The generated planner and runtime bridge
-ABIs are versioned and validated at runtime.
+Version **2.0.3** is being prepared for engine integration testing. It adds explicit
+variable declarations, fixes nested callterm evaluation, and supports initialization
+time callterm validation. **This update breaks compatibility despite its patch
+version:** migrate assignment syntax, regenerate domain C sources and rebuild the
+host and modules. See the [2.0.3 migration guide](docs/RELEASE_2_0_3.md).
 
 ## Domain example
 
@@ -295,3 +298,10 @@ Applicable notices are included when producing an SDK package.
 Licensed under the [MIT License](LICENSE). See [copyright and attribution](NOTICE.md)
 and [third-party notices](THIRD_PARTY_NOTICES.md) before redistributing binaries or
 SDK packages.
+
+## Variable declarations
+
+Use `(= ?value expression)` to declare and initialize a fresh local variable.
+The compiler rejects destinations already declared or used in the same path.
+`==` remains equality comparison; implicit `(?value (call ...))` binding is rejected.
+See [assignment syntax and migration](docs/ASSIGNMENT.md).

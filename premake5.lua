@@ -4,6 +4,10 @@ newoption {
     description = "Generate HTNSDK: distributable framework, runtime bridge and translator only"
 }
 local sdk = _OPTIONS["sdk"] ~= nil
+newoption {
+    trigger = "test-matrix",
+    description = "Build full regression suites in Debug/Release, each Plain/Instrumented"
+}
 local function ProjectLocation(inName)
     return sdk and ("build/sdk/" .. inName) or inName
 end
@@ -43,6 +47,8 @@ workspace(sdk and "HTNSDK" or "HTN")
             "DynamicDebugPlain", "DynamicDebugInstrumented",
             "DynamicReleasePlain", "DynamicReleaseInstrumented"
         }
+    elseif _OPTIONS["test-matrix"] then
+        configurations { "DebugPlain", "DebugInstrumented", "ReleasePlain", "ReleaseInstrumented" }
     else
         configurations { "Debug", "Profile", "ProfileDetailed", "Release" }
     end
@@ -91,6 +97,22 @@ workspace(sdk and "HTNSDK" or "HTN")
         defines { "HTN_RELEASE" }
         runtime "Release"
         optimize "Full"
+
+    if _OPTIONS["test-matrix"] and not sdk then
+        for _, crt in ipairs { "Debug", "Release" } do
+            for _, instrumentation in ipairs { "Plain", "Instrumented" } do
+                filter ("configurations:" .. crt .. instrumentation)
+                    runtime(crt)
+                    optimize(crt == "Debug" and "Off" or "Full")
+                    symbols "On"
+                    defines { crt == "Debug" and "_DEBUG" or "NDEBUG" }
+                    defines { crt == "Debug" and "HTN_DEBUG" or "HTN_RELEASE" }
+                    if instrumentation == "Instrumented" then
+                        defines { "HTN_ENABLE_LOGGING", "HTN_VALIDATE_DOMAIN", "HTN_DEBUG_DECOMPOSITION" }
+                    end
+            end
+        end
+    end
 
     if sdk then
         filter {}
@@ -521,6 +543,20 @@ group "Tests"
         '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/backtracking_policy.domain" CreateBacktrackingPolicyFixedEnoughHTN "%{wks.location}/HTNTest/generated/backtracking_policy_fixed_enough" --backtracking-policy=fixed-capacity --backtracking-capacity=3' .. (_OPTIONS["runtime-backtracking-support"] == "enabled" and " --runtime-backtracking-support=enabled" or "") .. (os.host() == "windows" and " || exit /b 1" or " || exit 1")
     }
 
-    nuget { "Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn:1.8.1.7" }
+    if _OPTIONS["test-matrix"] then
+        -- The NuGet targets select their CRT by the exact configuration name
+        -- "Debug"; map custom matrix configurations to the correct binaries.
+        local gtest = "packages/Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7"
+        includedirs { gtest .. "/build/native/include" }
+        filter "configurations:Debug*"
+            libdirs { gtest .. "/lib/native/v140/windesktop/msvcstl/static/rt-dyn/x64/Debug" }
+            links { "gtestd", "gtest_maind" }
+        filter "configurations:Release*"
+            libdirs { gtest .. "/lib/native/v140/windesktop/msvcstl/static/rt-dyn/x64/Release" }
+            links { "gtest", "gtest_main" }
+        filter {}
+    else
+        nuget { "Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn:1.8.1.7" }
+    end
 end -- Full solution's benchmarks and tests.
 group ""

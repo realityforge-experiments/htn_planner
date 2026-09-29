@@ -5,8 +5,8 @@
         (branch_callterms
             (and
                 (call binded_function_with_args "we are doing nothing")
-                (?health (call get_health 7))
-                (?max_speed (call get_max_speed 7))
+                (= ?health (call get_health 7))
+                (= ?max_speed (call get_max_speed 7))
             )
             (
                 (!log "callterms succeeded")

@@ -1,5 +1,9 @@
 # Missing callterm policy
 
+Nested `(call ...)` expressions in comparisons and arithmetic use this same
+policy. Reports point to the call expression itself, including when its result is
+assigned to a local variable. See the [nested-call regression and migration notes](RELEASE_NOTES_NESTED_CALLS.md).
+
 Runtime options are direct fields of the execution descriptor. Configure them
 through `HTNPlannerExecutionContext` (reference integration) or
 `HTNGeneratedPlannerContext` (core generated execution). Callterm bindings contain
@@ -78,6 +82,15 @@ callbacks and client pointers. Changes between executions take effect without
 rebuilding or invalidating cached callterm slots. Clients synchronize any shared
 mutable services. Registry mutation during execution remains unsupported.
 
+## World-state restrictions in callterms
+
+Callterms and report callbacks must not delete facts while decomposition is in
+progress. Do not remove rows, clear fact tables or reset/replace the world state
+from a callback. Queue removals and apply them after decomposition returns, when
+no other decomposition is using that world state. This is a planner assumption,
+not a runtime-enforced check, and also applies to deferred method expansion.
+See the [world-state decomposition contract](../HTNFramework/src/Translator/HTNGeneratedPlannerInterface.md#world-state-lifetime-during-decomposition).
+
 ## Migration and ABI
 
 Remove `SetMissingCallTermPolicy` calls on bindings. Assign the execution's policy
@@ -86,8 +99,9 @@ Both C invocation exports now take an `HTNGeneratedPlannerContext*` as their fir
 argument; resolving a slot still takes the binding context. The C++ registry
 `Execute` takes `HTNPlannerExecutionContext`.
 
-Planner ABI versions: plain `0x48540004`, debug `0x48550005`, profiling
-`0x48560004`, debug/profiling `0x48570005`. Runtime bridge revision: **6**.
+The initial policy implementation used planner ABI versions plain `0x48540004`,
+debug `0x48550005`, profiling `0x48560004`, debug/profiling `0x48570005`.
+See initialization validation below for the current descriptor revisions.
 Regenerate domains and rebuild hosts, runtime bridge and modules together.
 Old definitions/tables are rejected; the atom and cached-callterm layouts remain
 unchanged. See [type conversions](TYPE_CONVERSION.md) for converter migration.
@@ -105,3 +119,40 @@ The SDK manifest propagates NDEBUG for Release and _DEBUG for Debug, matching
 the compiled library. Development Release does not currently disable assertions;
 its death tests do not replace these packaged production checks. No API or ABI
 change is required for this coverage.
+
+## Initialization validation (unreleased)
+
+After loading the generated definition and configuring the registry and daemon
+instances, validate all required call sites explicitly:
+
+```cpp
+HTNCallTermBindingContext Bindings(Registry);
+Bindings.SetDaemon("agent", &Agent);
+const bool Ready = Registry.ValidateGeneratedCallTerms(
+    *Definition, Bindings, ReportMissingCallTerm, ClientContext);
+// The host decides whether a false result should prevent initialization.
+```
+
+The callback has the existing `HTNMissingCallTermCallback` signature. Validation
+shares runtime checks for `NotRegistered`, `MissingBinding` and `MissingInstance`,
+in that order. It never executes callterms and does not use the runtime missing
+policy. An omitted callback still returns the correct success/failure result.
+Reports are synchronous, with borrowed name, daemon ID and source data; copy data
+that must outlive the callback. Do not mutate the registry or bindings from the
+callback or concurrently with validation.
+
+Every emitted call site is checked, including linked domains, nested calls, task
+arguments and currently unreachable branches. A missing name used at multiple
+locations produces a report for each location. Source metadata is present in
+plain and instrumented definitions. No argument type checking is attempted.
+
+A descriptor with an incompatible ABI or malformed metadata, or a binding context
+belonging to another registry, returns false without a missing-callterm report.
+A domain with no callterms succeeds. Revalidate after hot reload or binding changes;
+normal runtime checks remain active because instances can change afterward.
+
+This adds a call-site table to `HTNGeneratedPlannerDefinition`. Regenerate and
+recompile domain modules and rebuild their host with matching headers. Planner ABI
+versions are now plain `0x48540005`, debug `0x48550006`, profiling `0x48560005`,
+and debug/profiling `0x48570006`. `HTNAtom` and runtime bridge function signatures
+are unchanged. Existing published SDK artifacts are not modified.

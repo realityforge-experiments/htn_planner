@@ -16,6 +16,7 @@ std::string GetTokenTypeString(const HTNTokenType inTokenType)
                                                                                       {HTNTokenType::HASH, "hash"},
                                                                                       {HTNTokenType::AMPERSAND, "ampersand"},
                                                                                       {HTNTokenType::AT, "at"},
+                                                                                      {HTNTokenType::ASSIGN, "="},
                                                                                       {HTNTokenType::EQUAL_EQUAL, "=="},
                                                                                       {HTNTokenType::NOT_EQUAL, "!="},
                                                                                       {HTNTokenType::LESS, "<"},

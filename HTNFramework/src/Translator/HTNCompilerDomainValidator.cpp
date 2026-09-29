@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jose Antonio Escribano joseantonioescribanoayllon@gmail.com
 
+#include "Parser/HTNAssignmentScope.h"
+
 #include "Core/HTNCallableSignature.h"
 #include "Translator/HTNCompilerDomainValidator.h"
 
@@ -32,6 +34,43 @@ void Error(HTNDiagnosticSink& outDiagnostics, const std::vector<std::string>& in
                          HTNDiagnosticRecovery::Recoverable, inNode.Range);
 }
 
+void CollectAssignmentUses(const AST::ValuePtr& Value, std::vector<std::string>& Uses)
+{
+    if (!Value) return;
+    if (Value->Kind == AST::ValueKind::Variable) Uses.push_back(Text(Value));
+    for (const auto& Argument : Value->CallArguments) CollectAssignmentUses(Argument, Uses);
+    for (const auto& Operand : Value->ArithmeticOperands) CollectAssignmentUses(Operand, Uses);
+}
+
+HTNAssignmentScopeNode AssignmentScope(const AST::ConditionPtr& Condition)
+{
+    HTNAssignmentScopeNode Node;
+    if (!Condition) return Node;
+    Node.Range = Condition->Range;
+    if (Condition->Kind == AST::ConditionKind::Assignment)
+        Node.Destination = Text(Condition->Output);
+    else CollectAssignmentUses(Condition->Output, Node.Uses);
+    for (const auto& Argument : Condition->Arguments) CollectAssignmentUses(Argument, Node.Uses);
+    using Kind = HTNAssignmentScopeNode::Kind;
+    Node.Type = Condition->Kind == AST::ConditionKind::And ? Kind::Sequence :
+        Condition->Kind == AST::ConditionKind::Not ? Kind::Negation :
+        (Condition->Kind == AST::ConditionKind::Or || Condition->Kind == AST::ConditionKind::Alt) ? Kind::Alternatives : Kind::Leaf;
+    for (const auto& Child : Condition->Children) Node.Children.push_back(AssignmentScope(Child));
+    return Node;
+}
+
+bool ValidateAssignments(const AST::ConditionPtr& Condition, const std::vector<AST::ValuePtr>& Parameters,
+                         const std::vector<std::string>& Files, HTNDiagnosticSink& Diagnostics)
+{
+    std::unordered_set<std::string> Seen;
+    for (const auto& Parameter : Parameters) Seen.insert(Text(Parameter));
+    return HTNValidateAssignmentScope(AssignmentScope(Condition), Seen,
+        [&](const HTNSourceRange& Range, const std::string& Message) {
+            Diagnostics.Error(Condition ? File(Files, Condition->FileIndex) : std::string{}, Message,
+                              HTNDiagnosticRecovery::Recoverable, Range);
+        });
+}
+
 void DeclareVariables(const AST::ConditionPtr& inCondition, std::unordered_set<std::string>& ioVariables)
 {
     if (!inCondition) return;
@@ -46,6 +85,7 @@ void DeclareVariables(const AST::ConditionPtr& inCondition, std::unordered_set<s
     case AST::ConditionKind::Axiom:
         for (const auto& Argument : inCondition->Arguments) Declare(Argument);
         break;
+    case AST::ConditionKind::Assignment:
     case AST::ConditionKind::Call:
         Declare(inCondition->Output);
         break;
@@ -117,15 +157,20 @@ bool ValidateConditionVariables(const AST::ConditionPtr& inCondition,
                 Valid = false;
             }
         break;
+    case AST::ConditionKind::Assignment:
     case AST::ConditionKind::Call:
+    {
+        const bool IsAssignment = inCondition->Kind == AST::ConditionKind::Assignment;
+        const std::string Usage = IsAssignment ? "an assignment" : "callterm '" + Text(inCondition->Id) + "'";
         for (const auto& Argument : inCondition->Arguments)
         {
-            CheckSingletonUse(Argument, "a callterm");
-            Valid = ValidateValueUse(Argument, inVariables, "callterm '" + Text(inCondition->Id) + "'",
+            CheckSingletonUse(Argument, Usage);
+            Valid = ValidateValueUse(Argument, inVariables, Usage,
                                      inFiles, outDiagnostics) && Valid;
         }
-        CheckSingletonUse(inCondition->Output, "a callterm output");
+        CheckSingletonUse(inCondition->Output, IsAssignment ? "an assignment destination" : "a callterm output");
         break;
+    }
     case AST::ConditionKind::Comparison:
     case AST::ConditionKind::Split:
         for (size_t I = 0; I < inCondition->Arguments.size(); ++I)
@@ -157,6 +202,7 @@ bool ValidateMethodVariables(const AST::Method& inMethod,
     {
         std::unordered_set<std::string> Variables = Parameters;
         std::unordered_set<std::string> Singletons;
+        Valid = ValidateAssignments(Branch->Precondition, inMethod.Parameters, inFiles, outDiagnostics) && Valid;
         DeclareVariables(Branch->Precondition, Variables);
         Valid = ValidateConditionVariables(Branch->Precondition, Variables, Singletons,
                                            inFiles, outDiagnostics) && Valid;
@@ -439,6 +485,8 @@ bool HTNValidateCompilerDomainModules(const std::vector<HTNCompilerAST::Domain>&
                 }
             Valid = ValidateMethodVariables(*Method, inSourceFiles, outDiagnostics) && Valid;
         }
+        for (const auto& Axiom : Module.Axioms)
+            Valid = ValidateAssignments(Axiom->Body, Axiom->Parameters, inSourceFiles, outDiagnostics) && Valid;
         for (const auto& Axiom : Module.Axioms)
             for (const auto& Parameter : Axiom->Parameters)
                 if (!Text(Parameter).starts_with("inp_") && !Text(Parameter).starts_with("out_") &&

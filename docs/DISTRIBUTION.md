@@ -73,3 +73,10 @@ NDEBUG. Consumers use only extracted package files. The build also runs
 The hot reload demo validates definitions before invoking module lifecycle
 callbacks. Its headless self-test rejects a malformed fact-name table and checks
 unloading and recovery of the previous valid module.
+
+## Unreleased descriptor update
+
+Initialization callterm validation extends `HTNGeneratedPlannerDefinition`.
+Regenerate domains and rebuild their host using matching headers. Current planner
+ABI values are plain `0x48540005`, debug `0x48550006`, profiling `0x48560005`,
+and debug/profiling `0x48570006`. See [callterm validation](MISSING_CALLTERMS.md#initialization-validation-unreleased).

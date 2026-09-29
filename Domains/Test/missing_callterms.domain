@@ -5,7 +5,7 @@
         (try (and (call probe)) ((!unexpected)))
         (fallback () ((!fallback))))
     (:method (binding) top_level_method
-        (try (and (?value (call probe))) ((!unexpected ?value)))
+        (try (and (= ?value (call probe))) ((!unexpected ?value)))
         (fallback () ((!fallback))))
     (:method (primitive) top_level_method
         (try () ((!use (call probe)))))

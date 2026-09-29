@@ -12,8 +12,8 @@
                 (controlled_entity ?entity)
                 (entity_count ?num_entities)
                 (call binded_function_with_args "starting recursive complex HTN scenario")
-                (?health (call get_health ?entity))
-                (?max_speed (call get_max_speed ?entity))
+                (= ?health (call get_health ?entity))
+                (= ?max_speed (call get_max_speed ?entity))
                 (health_value ?entity ?health)
                 (speed_value ?entity ?max_speed)
                 (not (entity_disabled ?entity))
@@ -28,8 +28,8 @@
             (and
                 (controlled_entity ?entity)
                 (call binded_function_with_args "starting complex HTN scenario")
-                (?health (call get_health ?entity))
-                (?max_speed (call get_max_speed ?entity))
+                (= ?health (call get_health ?entity))
+                (= ?max_speed (call get_max_speed ?entity))
                 (health_value ?entity ?health)
                 (speed_value ?entity ?max_speed)
                 (not (entity_disabled ?entity))
@@ -144,7 +144,7 @@
 
         (branch_use_medkit
             (and
-                (?current_health (call get_health ?inp_entity))
+                (= ?current_health (call get_health ?inp_entity))
                 (health_value ?inp_entity ?current_health)
                 (medkit ?inp_entity)
                 (not (under_fire ?inp_entity))

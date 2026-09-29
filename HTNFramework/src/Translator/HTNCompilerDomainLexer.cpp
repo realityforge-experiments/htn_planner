@@ -62,16 +62,7 @@ bool HTNCompilerDomainLexer::Lex(HTNCompilerDomainLexerContext& ioDomainLexerCon
                 ioDomainLexerContext.AdvancePosition();
                 break;
             }
-            const std::string Message = "Expected '=' after '=' for comparison operator '=='";
-            HTNSourceRange ErrorRange;
-            ErrorRange.Begin.Offset = ioDomainLexerContext.GetPosition();
-            ErrorRange.Begin.Line = static_cast<int>(ioDomainLexerContext.GetRow() + 1);
-            ErrorRange.Begin.Column = static_cast<int>(ioDomainLexerContext.GetColumn() + 1);
-            ErrorRange.End = ErrorRange.Begin;
-            ++ErrorRange.End.Offset;
-            ++ErrorRange.End.Column;
-            ioDomainLexerContext.SetLastError(Message, ErrorRange);
-            Result = false;
+            ioDomainLexerContext.AddToken(HTNAtomOwner(), HTNTokenType::ASSIGN HTN_LOG_ONLY(, "="));
             ioDomainLexerContext.AdvancePosition();
             break;
         }

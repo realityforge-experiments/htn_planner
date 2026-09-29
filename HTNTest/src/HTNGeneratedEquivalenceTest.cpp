@@ -1804,6 +1804,41 @@ INSTANTIATE_TEST_CASE_P(
         HTNEquivalenceCase{"NestedCalls", "callterms", "nested_calls", "NestedCallsDemo", "test_nested_calls"}),
     EquivalenceCaseName);
 
+TEST(HTNAssignmentExecutionTest, EvaluatesValuesRollbackNestedCallsAndFailure)
+{
+    HTNAtomLifetimeBalanceScope Lifetime;
+    HTNDatabaseHook Database;
+    HTNCallTermRegistry Registry;
+    int Calls = 0;
+    Registry.Bind("assignment_probe", [&Calls](const HTNCallTermArguments& Arguments) -> int32 {
+        ++Calls;
+        return HTNAtomGetValue<int32>(Arguments[0]) + 1;
+    });
+    HTNPlannerHook Hook(Database.GetWorldState(), Registry);
+    const auto* Definition = CreateNumericExpressionsHTN_GetDefinition();
+    ASSERT_TRUE(Hook.SetGeneratedPlannerDefinition(Definition));
+    Database.GetWorldState().SetFactRegistry(&Hook.GetFactRegistry());
+    ASSERT_TRUE(Database.GetWorldState().WriteFact(HtnSymbol::sGetSymbol("assignment_candidate"), 1));
+    ASSERT_TRUE(Database.GetWorldState().WriteFact(HtnSymbol::sGetSymbol("assignment_candidate"), 2));
+    struct Case { const char* Entry; const char* Expected; int Calls; };
+    for (const auto& Test : {
+        Case{"assignment_values", "!assignment_values main_threat 5 6 false", 1},
+        Case{"assignment_backtracking", "!assignment_result 3", 2},
+        Case{"assignment_nested_calls", "!assignment_result 5", 2},
+        Case{"assignment_failure", "!assignment_result 9", 0},
+        Case{"assignment_ordered_failure", "!assignment_result 9", 0},
+        Case{"assignment_axiom", "!assignment_result 2", 0}})
+    {
+        SCOPED_TRACE(Test.Entry);
+        Calls = 0;
+        HTNAtomOwner Generated;
+        ASSERT_EQ(RunGeneratedPlanner(*Definition, Database.GetWorldState(), Hook.GetCallTermBindingContext(),
+                                     Test.Entry, Generated), HTN_DECOMPOSITION_SUCCEEDED);
+        EXPECT_EQ(Calls, Test.Calls);
+        EXPECT_EQ(FormatPlan(Generated), std::vector<std::string>{Test.Expected});
+    }
+}
+
 TEST(HTNGeneratedArithmeticArgumentTest, EvaluatesEveryOperatorInTaskAndCallTermArguments)
 {
     HTNAtomLifetimeBalanceScope AtomLifetimeBalance;
