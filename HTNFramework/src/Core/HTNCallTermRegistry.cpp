@@ -63,20 +63,52 @@ HTNAtomOwner HTNCallTermRegistry::InvokeEntry(const Entry* inEntry, const char* 
         }
         return HTNAtomOwner();
     };
-    if (!inEntry)
-        return Missing(HTNMissingCallTermReason::NotRegistered);
-    if (!inEntry->Function)
-        return Missing(HTNMissingCallTermReason::MissingBinding);
     void* Daemon = nullptr;
-    if (inEntry->DaemonSlot != std::numeric_limits<std::size_t>::max())
-    {
-        Daemon = inContext ? inContext->GetDaemon(inEntry->DaemonSlot) : nullptr;
-        if (!Daemon)
-            return Missing(HTNMissingCallTermReason::MissingInstance);
-    }
+    if (const auto Reason = CheckEntry(inEntry, inContext, Daemon))
+        return Missing(*Reason);
     HTNCallTermArguments Arguments = inArguments;
     Arguments.mClientContext = inClientContext;
     return inEntry->Function(Daemon, Arguments);
+}
+
+std::optional<HTNMissingCallTermReason> HTNCallTermRegistry::CheckEntry(
+    const Entry* inEntry, const HTNCallTermBindingContext* inContext, void*& outDaemon)
+{
+    outDaemon = nullptr;
+    if (!inEntry) return HTNMissingCallTermReason::NotRegistered;
+    if (!inEntry->Function) return HTNMissingCallTermReason::MissingBinding;
+    if (inEntry->DaemonSlot != std::numeric_limits<std::size_t>::max())
+    {
+        outDaemon = inContext ? inContext->GetDaemon(inEntry->DaemonSlot) : nullptr;
+        if (!outDaemon) return HTNMissingCallTermReason::MissingInstance;
+    }
+    return std::nullopt;
+}
+
+bool HTNCallTermRegistry::ValidateGeneratedCallTerms(const HTNGeneratedPlannerDefinition& inDefinition,
+    const HTNCallTermBindingContext& inContext, HTNMissingCallTermCallback inCallback, void* inClientContext) const
+{
+    if (&inContext.GetRegistry() != this || !HTNGeneratedPlanner_ValidateDefinition(&inDefinition))
+        return false;
+    bool Valid = true;
+    for (uint32_t Index = 0; Index < inDefinition.callterm_requirement_count; ++Index)
+    {
+        const auto& Requirement = inDefinition.callterm_requirements[Index];
+        const auto It = mEntries.find(Requirement.name);
+        const Entry* Binding = It == mEntries.end() ? nullptr : &It->second;
+        void* Daemon = nullptr;
+        if (const auto Reason = CheckEntry(Binding, &inContext, Daemon))
+        {
+            Valid = false;
+            if (inCallback)
+            {
+                const HTNMissingCallTermInfo Info{Requirement.name, *Reason,
+                    Binding && !Binding->DaemonID.empty() ? Binding->DaemonID.c_str() : nullptr, Requirement.source};
+                inCallback(inClientContext, &Info);
+            }
+        }
+    }
+    return Valid;
 }
 
 bool HTNCallTermRegistry::BindMember(const std::string& inID,

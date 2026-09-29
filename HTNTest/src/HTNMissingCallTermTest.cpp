@@ -165,7 +165,7 @@ TEST(HTNMissingCallTermTest, GeneratedCallsReportProvenanceAndPreserveFailureSem
                     EXPECT_NE(Client.File.find("missing_callterms.domain"), std::string::npos);
                     const size_t Method = Text.find("(:method (" + Entry + ")");
                     ASSERT_NE(Method, std::string::npos);
-                    const size_t Call = Text.find(Entry == "binding" ? "(= ?value" : "(call probe)", Method);
+                    const size_t Call = Text.find("(call probe)", Method);
                     ASSERT_NE(Call, std::string::npos);
                     const auto Position = Source.GetPosition(Call);
                     EXPECT_EQ(Client.Line, static_cast<uint32_t>(Position.Line));
@@ -293,4 +293,90 @@ TEST(HTNMissingCallTermTest, InvalidRuntimePolicyAndMissingReportCallbackAssert)
         EXPECT_EQ(InvokeGenerated(Context, Call, Result.Get()), 0);
 #endif
     }
+}
+
+TEST(HTNMissingCallTermTest, InitializationValidationSharesRuntimeChecksWithoutInvoking)
+{
+    const auto& Definition = *CreateMissingCalltermsHTN_GetDefinition();
+    ASSERT_EQ(Definition.callterm_requirement_count, 7u);
+    HTNCallTermRegistry Registry;
+    HTNCallTermBindingContext Bindings(Registry);
+    int Executions = 0;
+    Registry.Bind("identity", [&Executions](const HTNCallTermArguments&) { ++Executions; return true; });
+    ClientContext Client;
+    EXPECT_FALSE(Registry.ValidateGeneratedCallTerms(Definition, Bindings, Report, &Client));
+    EXPECT_EQ(Client.Reports, 6);
+    EXPECT_EQ(Client.Reason, HTNMissingCallTermReason::NotRegistered);
+    EXPECT_EQ(Client.Name, "probe");
+    EXPECT_EQ(Client.Domain, "MissingCallTerms");
+    EXPECT_FALSE(Client.File.empty());
+    EXPECT_GT(Client.Line, 0u);
+    EXPECT_GT(Client.Column, 0u);
+
+    ASSERT_TRUE(Registry.BindMember("probe", "agent", {}, {}));
+    Client.Reports = 0;
+    EXPECT_FALSE(Registry.ValidateGeneratedCallTerms(Definition, Bindings, Report, &Client));
+    EXPECT_EQ(Client.Reports, 6);
+    EXPECT_EQ(Client.Reason, HTNMissingCallTermReason::MissingBinding);
+    EXPECT_EQ(Client.Daemon, "agent");
+
+    ASSERT_TRUE(Registry.BindMember("probe", "agent",
+        [&Executions](void*, const HTNCallTermArguments&) { ++Executions; return HTNAtomOwner(true); }, {}));
+    Client.Reports = 0;
+    EXPECT_FALSE(Registry.ValidateGeneratedCallTerms(Definition, Bindings, Report, &Client));
+    EXPECT_EQ(Client.Reports, 6);
+    EXPECT_EQ(Client.Reason, HTNMissingCallTermReason::MissingInstance);
+    ASSERT_TRUE(Bindings.SetDaemon("agent", &Executions));
+    Client.Reports = 0;
+    EXPECT_TRUE(Registry.ValidateGeneratedCallTerms(Definition, Bindings, Report, &Client));
+    EXPECT_EQ(Client.Reports, 0);
+    EXPECT_EQ(Executions, 0);
+    ASSERT_TRUE(Bindings.SetDaemon("agent", nullptr));
+    EXPECT_FALSE(Registry.ValidateGeneratedCallTerms(Definition, Bindings));
+}
+
+TEST(HTNMissingCallTermTest, InitializationMetadataIncludesEveryCallSiteWithExactSource)
+{
+    const auto& Definition = *CreateMissingCalltermsHTN_GetDefinition();
+    const auto Path = HTNFileHelpers::MakeAbsolutePath("Domains/Test/missing_callterms.domain");
+    std::ifstream Input(Path);
+    const std::string Text{std::istreambuf_iterator<char>(Input), std::istreambuf_iterator<char>()};
+    ASSERT_FALSE(Text.empty());
+    const HTNSourceText Source(Text);
+    size_t Count = 0;
+    for (size_t Offset = Text.find("(call "); Offset != std::string::npos; Offset = Text.find("(call ", Offset + 1))
+    {
+        const auto Position = Source.GetPosition(Offset);
+        uint32_t Matches = 0;
+        for (uint32_t Index = 0; Index < Definition.callterm_requirement_count; ++Index)
+        {
+            const auto& Required = Definition.callterm_requirements[Index];
+            if (Required.source.line != static_cast<uint32_t>(Position.Line) || Required.source.column != static_cast<uint32_t>(Position.Column)) continue;
+            ++Matches;
+            EXPECT_EQ(Text.compare(Offset + 6, std::string(Required.name).size(), Required.name), 0);
+            EXPECT_EQ(HTNFileHelpers::MakeAbsolutePath(Required.source.file).lexically_normal().generic_string(),
+                Path.lexically_normal().generic_string());
+        }
+        EXPECT_EQ(Matches, 1u);
+        ++Count;
+    }
+    EXPECT_EQ(Count, Definition.callterm_requirement_count);
+}
+
+TEST(HTNMissingCallTermTest, InitializationRejectsInvalidDescriptorsAndForeignRegistry)
+{
+    auto Definition = *CreateMissingCalltermsHTN_GetDefinition();
+    HTNCallTermRegistry Registry, Other;
+    HTNCallTermBindingContext Bindings(Registry), Foreign(Other);
+    EXPECT_FALSE(Registry.ValidateGeneratedCallTerms(Definition, Foreign));
+    Definition.callterm_requirement_count = 0;
+    Definition.callterm_requirements = nullptr;
+    EXPECT_TRUE(Registry.ValidateGeneratedCallTerms(Definition, Bindings));
+    Definition.callterm_requirement_count = 1;
+    EXPECT_FALSE(Registry.ValidateGeneratedCallTerms(Definition, Bindings));
+    const HTNGeneratedCallTermRequirement Invalid{nullptr, {}};
+    Definition.callterm_requirements = &Invalid;
+    EXPECT_FALSE(Registry.ValidateGeneratedCallTerms(Definition, Bindings));
+    --Definition.abi_version;
+    EXPECT_FALSE(Registry.ValidateGeneratedCallTerms(Definition, Bindings));
 }

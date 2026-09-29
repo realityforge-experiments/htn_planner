@@ -1,5 +1,8 @@
 # Documentation
 
+- [2.0.3 preparation and migration](RELEASE_2_0_3.md)
+- [Nested callterm evaluation](RELEASE_NOTES_NESTED_CALLS.md)
+
 - [Compiler pipeline and IR](COMPILER_IR.md)
 - [Generated execution debugger](GENERATED_DEBUGGER.md)
 - [AAA combat NPC demo](AAA_COMBAT_NPC_DEMO.md)

@@ -189,7 +189,7 @@ int32 AIHTNDemoPathfinder::RequestPath(
 HTNAtomOwner AIHTNDemoPathfinder::MakeCellAtom(const Cell& inCell)
 {
     HTNAtomOwner Atom;
-    const bool Converted = HTNTryToAtom(inCell, *Atom.Get());
+    [[maybe_unused]] const bool Converted = HTNTryToAtom(inCell, *Atom.Get());
     assert(Converted);
     return Atom;
 }

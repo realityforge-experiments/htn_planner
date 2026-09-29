@@ -23,7 +23,8 @@ extern "C" int HTNGeneratedPlanner_ValidateDefinition(const HTNGeneratedPlannerD
         !inDefinition->initialize_execution_storage ||
         !inDefinition->destroy_execution_storage ||
         !inDefinition->decompose_call ||
-        (inDefinition->fact_count != 0u && !inDefinition->fact_names))
+        (inDefinition->fact_count != 0u && !inDefinition->fact_names) ||
+        (inDefinition->callterm_requirement_count != 0u && !inDefinition->callterm_requirements))
     {
         HTN_LOG_ERROR("Generated planner definition has an invalid storage/lifecycle contract");
         return 0;
@@ -33,6 +34,8 @@ extern "C" int HTNGeneratedPlanner_ValidateDefinition(const HTNGeneratedPlannerD
         if (!inDefinition->fact_names[Index])
             return 0;
     }
+    for (uint32_t Index = 0; Index < inDefinition->callterm_requirement_count; ++Index)
+        if (!inDefinition->callterm_requirements[Index].name) return 0;
 #ifdef HTN_GENERATED_EXECUTION_PROFILING
     if (!inDefinition->get_execution_profiling)
     {

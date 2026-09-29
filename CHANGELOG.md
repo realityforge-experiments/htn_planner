@@ -3,7 +3,24 @@
 All notable changes to HTN Planner are documented in this file. Releases follow
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 2.0.3 - Pending engine validation
+
+**Breaking compatibility despite the patch version:** migrate assignments and
+regenerate/rebuild all domain modules and the host.
+
+### Callterm evaluation and initialization validation
+
+- Evaluate nested callterms in comparisons and arithmetic instead of treating
+  their names as literal values. Preserve missing-call policies and exact source
+  locations. See [nested-call regression notes](docs/RELEASE_NOTES_NESTED_CALLS.md).
+- Add `HTNCallTermRegistry::ValidateGeneratedCallTerms` for explicit initialization
+  checks of missing registrations, bindings and instances without invoking calls.
+- Generated definitions expose call-site requirements in plain and instrumented
+  builds. Each original call site is reported once, including linked sources.
+- **Compatibility:** the planner descriptor ABI changes. Rebuild the host and
+  regenerate/recompile domain modules with matching headers; atom layout and
+  RuntimeBridge function signatures are unchanged. See
+  [initialization validation](docs/MISSING_CALLTERMS.md#initialization-validation-unreleased).
 
 ### Explicit variable declarations (breaking domain syntax change)
 

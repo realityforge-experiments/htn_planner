@@ -12,13 +12,13 @@
 
 #ifndef HTN_GENERATED_PLANNER_ABI_VERSION
 #if defined(HTN_DEBUG_DECOMPOSITION) && defined(HTN_GENERATED_EXECUTION_PROFILING)
-#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48570005)
+#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48570006)
 #elif defined(HTN_DEBUG_DECOMPOSITION)
-#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48550005)
+#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48550006)
 #elif defined(HTN_GENERATED_EXECUTION_PROFILING)
-#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48560004)
+#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48560005)
 #else
-#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48540004)
+#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48540005)
 #endif
 #endif
 
@@ -123,6 +123,13 @@ typedef HTNDecompositionStatus (*HTNGeneratedDecomposeCallFn)(const HTNGenerated
                                                                  int require_top_level,
                                                                  HTNAtom* out_result);
 
+/* One call site required by a generated domain, independent of instrumentation. */
+typedef struct HTNGeneratedCallTermRequirement
+{
+    const char* name;
+    HTNCallTermSource source;
+} HTNGeneratedCallTermRequirement;
+
 /* Immutable descriptor exported by each generated domain. The host explicitly chooses
    which generated planner definition it owns/uses; there is no global registry. */
 typedef struct HTNGeneratedPlannerDefinition
@@ -147,6 +154,9 @@ typedef struct HTNGeneratedPlannerDefinition
     HTNGeneratedDecomposeCallFn decompose_call;
     const char* const* fact_names;
     uint32_t fact_count;
+    /* All call sites, including linked domains; available without instrumentation. */
+    const HTNGeneratedCallTermRequirement* callterm_requirements;
+    uint32_t callterm_requirement_count;
 } HTNGeneratedPlannerDefinition;
 
 

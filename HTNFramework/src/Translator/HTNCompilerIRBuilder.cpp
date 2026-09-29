@@ -298,6 +298,14 @@ public:
     ValueRecord MakeValueRecord(const AST::Value& inNode)
     {
         ValueRecord Record;
+        if (inNode.Kind == AST::ValueKind::Call)
+        {
+            const std::string File = inNode.FileIndex < SourceFiles.size() ? SourceFiles[inNode.FileIndex] : "<domain>";
+            SetError(File + "(" + std::to_string(inNode.Range.Begin.Line) + "," +
+                std::to_string(inNode.Range.Begin.Column) + "): error: Call expression '" +
+                FormatDomainValueExpression(inNode) + "' was not lowered to a runtime invocation");
+            return Record;
+        }
         Record.Kind = LowerValueKind(inNode.GetExpressionType());
         Record.Text = Strings.Add(HTNAtomToString(inNode.GetValue(), false));
         // Keep the original domain expression for debugger metadata. Runtime/prepared
@@ -369,6 +377,19 @@ public:
     ValueRecord BuildTaskArgument(const AST::Value& inNode,
                                   std::vector<TaskCallExpressionRecord>& ioCalls)
     {
+        if (inNode.Kind == AST::ValueKind::Arithmetic)
+        {
+            AST::Value Shell = inNode;
+            Shell.ArithmeticOperands.clear();
+            ValueRecord Record = MakeValueRecord(Shell);
+            Record.DebugText = Strings.Add(FormatDomainValueExpression(inNode));
+            for (const auto& Operand : inNode.ArithmeticOperands)
+            {
+                ValueRecord Prepared = BuildTaskArgument(*Operand, ioCalls);
+                ArithmeticExpressions[Record.ArithmeticExpression].Operands.push_back(std::move(Prepared));
+            }
+            return Record;
+        }
         if (inNode.Kind == AST::ValueKind::Call)
         {
             TaskCallExpressionRecord CallRecord;
@@ -467,6 +488,33 @@ public:
     uint32 AddCondition(const AST::ConditionPtr& inNode)
     {
         if (!inNode) return kNoIndex;
+        if (inNode->Kind != AST::ConditionKind::Assignment)
+        {
+            bool HasCalls = false;
+            for (const auto& Argument : inNode->Arguments)
+                HasCalls = HasCalls || HasNestedAssignmentCall(Argument, false);
+            if (HasCalls)
+            {
+                std::vector<AST::ConditionPtr> Prefix;
+                auto Condition = std::make_shared<AST::Condition>(*inNode);
+                for (auto& Argument : Condition->Arguments)
+                {
+                    // Comparisons and callterms read all operands. Capture them in
+                    // source order, so failure stops before subsequent invocations.
+                    // Fact/axiom/split output variables must remain bindable.
+                    if (inNode->Kind == AST::ConditionKind::Comparison || inNode->Kind == AST::ConditionKind::Call ||
+                        HasNestedAssignmentCall(Argument, false))
+                        Argument = CaptureAssignmentValue(PrepareAssignmentExpression(Argument, Prefix), Prefix);
+                }
+                Prefix.push_back(Condition);
+                auto Sequence = std::make_shared<AST::Condition>();
+                Sequence->Kind = AST::ConditionKind::And;
+                Sequence->Range = inNode->Range;
+                Sequence->FileIndex = inNode->FileIndex;
+                Sequence->Children = std::move(Prefix);
+                return AddCondition(Sequence);
+            }
+        }
         if (inNode->Kind == AST::ConditionKind::Assignment && HasNestedAssignmentCall(inNode->Arguments[0]))
         {
             std::vector<AST::ConditionPtr> Prefix;
@@ -530,6 +578,7 @@ public:
             if (Expression.Kind == AST::ValueKind::Call)
             {
                 Record.Kind = HTN_CONDITION_CALL_BIND;
+                SetSource(Record, Expression);
                 Record.Id = Strings.Add(HTNAtomToString(Expression.CallId->GetValue(), false));
                 Record.ResolvedIndex = AllocateCallTermSlot(Record.Id);
                 Record.FirstArgument = static_cast<uint32>(Values.size());
@@ -1062,6 +1111,11 @@ bool HTNBuildCompilerIR(const AST::Domain& inDomain,
     B.SourceFiles = inSourceFiles;
     B.RuntimeBacktrackingSupport = inRuntimeBacktrackingSupport;
     B.Build();
+    if (B.HasError())
+    {
+        outError = B.GetError();
+        return false;
+    }
     if (!ResolveCompileTimeReferences(B))
     {
         outError = B.GetError();
