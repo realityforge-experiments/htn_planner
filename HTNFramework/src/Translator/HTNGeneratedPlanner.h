@@ -4,7 +4,7 @@
 
 #include "Core/HTNAtomC.h"
 #include "Core/HTNBacktrackingMode.h"
-#include "Core/HTNMissingCallTerm.h"
+#include "Core/HTNCallTermError.h"
 #include "Core/HTNDecompositionStatus.h"
 
 #include <stddef.h>
@@ -12,13 +12,13 @@
 
 #ifndef HTN_GENERATED_PLANNER_ABI_VERSION
 #if defined(HTN_DEBUG_DECOMPOSITION) && defined(HTN_GENERATED_EXECUTION_PROFILING)
-#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48570006)
+#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48570008)
 #elif defined(HTN_DEBUG_DECOMPOSITION)
-#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48550006)
+#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48550008)
 #elif defined(HTN_GENERATED_EXECUTION_PROFILING)
-#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48560005)
+#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48560007)
 #else
-#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48540005)
+#define HTN_GENERATED_PLANNER_ABI_VERSION UINT32_C(0x48540007)
 #endif
 #endif
 
@@ -84,6 +84,17 @@ static inline const HTNAtom* HTNGeneratedVariables_Get(const HTNGeneratedVariabl
 /* Generated planners own both opaque storage layouts and their lifecycle. */
 typedef int (*HTNGeneratedInitializeStorageFn)(void* storage);
 typedef void (*HTNGeneratedDestroyStorageFn)(void* storage);
+/* Read-only diagnostics owned by generated execution storage. Peak and error
+   describe the last decomposition; capacity and frame size are compile-time
+   properties. last_error is NULL on success and borrows generated module text. */
+typedef struct HTNGeneratedExecutionInfo
+{
+    uint32_t call_frame_capacity;
+    uint32_t peak_call_frames;
+    size_t call_frame_size;
+    const char* last_error;
+} HTNGeneratedExecutionInfo;
+typedef const HTNGeneratedExecutionInfo* (*HTNGeneratedGetExecutionInfoFn)(const void* storage);
 #ifdef HTN_GENERATED_EXECUTION_PROFILING
 typedef HTNGeneratedProfilingState* (*HTNGeneratedGetExecutionProfilingFn)(void* storage);
 #endif
@@ -102,8 +113,8 @@ struct HTNGeneratedPlannerContext
     const void* prepared_storage;
     /* Borrowed client services; never cached in prepared/execution storage. */
     void* client_context;
-    HTNMissingCallTermPolicy missing_callterm_policy;
-    HTNMissingCallTermCallback missing_callterm_callback;
+    HTNCallTermErrorPolicy callterm_error_policy;
+    HTNCallTermErrorCallback callterm_error_callback;
 };
 
 typedef int (*HTNGeneratedTaskContinuationFn)(const HTNGeneratedPlannerContext* context, HTNAtom* out_result);
@@ -157,6 +168,7 @@ typedef struct HTNGeneratedPlannerDefinition
     /* All call sites, including linked domains; available without instrumentation. */
     const HTNGeneratedCallTermRequirement* callterm_requirements;
     uint32_t callterm_requirement_count;
+    HTNGeneratedGetExecutionInfoFn get_execution_info;
 } HTNGeneratedPlannerDefinition;
 
 

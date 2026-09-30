@@ -37,7 +37,10 @@ typedef enum HTNDecompositionStatus
 
     // No decomposition has been requested yet. This state is used by host-side
     // tooling before the first planning request and is never returned by generated code.
-    HTN_DECOMPOSITION_NOT_RUN
+    HTN_DECOMPOSITION_NOT_RUN,
+
+    // The generated fixed call-frame array cannot suspend another method/task.
+    HTN_DECOMPOSITION_CALL_FRAME_CAPACITY_EXCEEDED
 } HTNDecompositionStatus;
 
 #ifdef __cplusplus

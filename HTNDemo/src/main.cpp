@@ -288,6 +288,7 @@ int main(int, char**)
     auto                             worldStates = FindWorldStates();
     int                              domainIndex = 6, methodIndex = 0, worldStateIndex = BestWS(kDomains[6], worldStates), loadedWS = -1;
     HTNBacktrackingMode              mode     = HTN_BACKTRACKING_ALL;
+    HTNDecompositionStatus           lastStatus = HTN_DECOMPOSITION_NOT_RUN;
     bool                             wsLoaded = false, hasResult = false, succeeded = false;
     double                           elapsed = 0;
     std::vector<std::string>         plan;
@@ -308,8 +309,8 @@ int main(int, char**)
             methodIndex = std::clamp(methodIndex, 0, (int)d.Methods.size() - 1);
             unit        = std::make_unique<HTNPlanningUnit>(database, *planner, d.Methods[methodIndex]);
             unit->SetBacktrackingMode(mode);
-            unit->GetExecutionContext().MissingCallTermPolicy = HTNMissingCallTermPolicy::Report;
-            unit->GetExecutionContext().MissingCallTermCallback = ReportGeneratedDemoMissingCallTerm;
+            unit->GetExecutionContext().CallTermErrorPolicy = HTNCallTermErrorPolicy::Report;
+            unit->GetExecutionContext().CallTermErrorCallback = ReportGeneratedDemoCallTermError;
 #ifdef HTN_DEBUG_DECOMPOSITION
             unit->SetGeneratedDebugger(&debugger);
             debugView.ClearSelection();
@@ -319,6 +320,7 @@ int main(int, char**)
         loadedWS        = -1;
         wsLoaded        = false;
         hasResult       = false;
+        lastStatus      = HTN_DECOMPOSITION_NOT_RUN;
         plan.clear();
     };
     reload();
@@ -404,9 +406,9 @@ int main(int, char**)
                     debugView.ResetExpansionOnNextRender();
 #endif
                     auto start  = std::chrono::steady_clock::now();
-                    auto status = unit->DecomposeTopLevelMethod(HtnSymbol::sGetSymbol(selected.Methods[methodIndex]));
+                    lastStatus  = unit->DecomposeTopLevelMethod(HtnSymbol::sGetSymbol(selected.Methods[methodIndex]));
                     elapsed     = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-                    succeeded   = status == HTN_DECOMPOSITION_SUCCEEDED;
+                    succeeded   = lastStatus == HTN_DECOMPOSITION_SUCCEEDED;
                     hasResult   = true;
                     plan.clear();
                     if (succeeded)
@@ -425,6 +427,11 @@ int main(int, char**)
                     ImGui::Separator();
                     ImGui::TextColored(succeeded ? ImVec4(.4f, .9f, .5f, 1) : ImVec4(.95f, .35f, .35f, 1), "%s in %.3f ms",
                                        succeeded ? "Success" : "Failure", elapsed);
+                    if (lastStatus == HTN_DECOMPOSITION_CALL_FRAME_CAPACITY_EXCEEDED)
+                    {
+                        ImGui::TextWrapped("Generated call-frame capacity exceeded. Regenerate this domain with a larger "
+                                           "--call-frame-capacity and recompile it.");
+                    }
                     for (const auto& task : plan)
                         ImGui::BulletText("%s", task.c_str());
                 }

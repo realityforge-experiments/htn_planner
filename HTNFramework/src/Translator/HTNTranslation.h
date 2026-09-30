@@ -32,6 +32,9 @@ struct HTNTranslationRequest
     // storage. FixedCapacity treats this as a hard limit; FixedWithOverflow may
     // exceed it by allocating overflow storage.
     uint32_t BacktrackingCapacity = 32u;
+
+    // Fixed generated call-frame array size; no runtime growth or allocation.
+    uint32_t CallFrameCapacity = 8192u;
 };
 
 // Identifies which stage prevented a translation request from completing.

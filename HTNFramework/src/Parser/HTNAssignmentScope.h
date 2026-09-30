@@ -18,6 +18,13 @@ struct HTNAssignmentScopeNode
     std::vector<HTNAssignmentScopeNode> Children;
 };
 
+// Axiom output parameters declare slots, but their first use may initialize them.
+// Input/output parameters additionally require an unbound value at runtime.
+inline bool HTNAssignmentParameterIsInitiallyUsed(const std::string& inName, bool inAxiom)
+{
+    return !inAxiom || (!inName.starts_with("out_") && !inName.starts_with("io_"));
+}
+
 template<typename Report>
 bool HTNValidateAssignmentScope(const HTNAssignmentScopeNode& inNode,
                                 std::unordered_set<std::string>& ioSeen, Report&& inReport)

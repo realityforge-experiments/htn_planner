@@ -20,7 +20,6 @@ Axiom calls use the name and number of arguments to select exactly one declarati
 - Axiom overloading itself preserves generated entry-point names and plan symbols. Release 2.0.0 changes the runtime ABI through its execution-context updates; regenerate domain C and rebuild the host and modules together. See [migration notes](RELEASE_2_0_0.md).
 
 The executable fixture `Domains/Test/axiom_overloads.domain` covers overloads with input, output and IO parameters, arithmetic arguments, exact base calls, overrides, nested calls and backtracking. It uses `WorldStates/Test/axiom_overloads.worldstate`.
-
 ## Backtracking and output arguments
 
 Generated multi-solution axioms support facts, nested axioms, nested `and`, `alt`,
@@ -42,13 +41,13 @@ nodes or generic runtime condition evaluator are involved.
   selection is enabled. Declaration order remains unrestricted; axiom dependency
   cycles remain rejected.
 
-Both backends use the same output contract, with or without domain validation:
+Generated execution uses the following output contract, with or without domain validation:
 
 | Parameter | Caller argument | Behavior |
 | --- | --- | --- |
 | `?inp_` | Bound value | Initialize the local input. |
 | `?out_` | Unbound variable | Compute the local output and bind the caller on success. |
-| `?out_` | Bound variable, literal or arithmetic expression | Compute the local output independently and require atom equality with the caller's value. |
+| `?out_` | Bound variable, literal or arithmetic expression | Fail before entering the axiom body; pure outputs require an unbound variable. |
 | `?io_` | Bound value | Initialize the local parameter and require a matching output. |
 | `?io_` | Unbound variable | Enumerate and export outputs. |
 
@@ -60,12 +59,15 @@ owned atom values survive suspension and their temporary copies are released on 
 ```lisp
 (:method (run) top_level_method
     (choose (and (#candidate_value (++ 1))) ((!selected 2))))
-(:axiom (candidate_value ?out_value)
-    (and (candidate ?out_value)))
+(:axiom (candidate_value ?io_value)
+    (and (candidate ?io_value)))
 ```
 
 With facts `(candidate 1)` and `(candidate 2)`, the first candidate is rejected and
 the second matches the evaluated argument `2`.
+
+Use `?io_` for this matching behavior. See [assignment](ASSIGNMENT.md) for
+initializing `?out_` parameters with literals, arithmetic and callterm results.
 
 `Domains/Test/nested_axiom_choices.domain` and `HTNGeneratedAxiomTest` cover output
 and IO backtracking, bound/literal/arithmetic arguments, aliased outputs, nested

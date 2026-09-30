@@ -24,12 +24,12 @@ namespace
 struct Reports
 {
     int Count = 0;
-    HTNMissingCallTermReason Reason{};
+    HTNCallTermErrorReason Reason{};
     std::string Name, Domain, File;
     uint32_t Line = 0, Column = 0;
 };
 
-void Report(void* inClient, const HTNMissingCallTermInfo* inInfo)
+void Report(void* inClient, const HTNCallTermErrorInfo* inInfo)
 {
     auto& Client = *static_cast<Reports*>(inClient);
     ++Client.Count;
@@ -102,7 +102,7 @@ TEST(HTNNestedCallExpressionTest, ValuesParticipateInBothOperandsAndEveryOperato
     {
         SCOPED_TRACE(Test.Entry);
         HTNPlanningUnit Unit(Database, Hook, Test.Entry);
-        Unit.GetExecutionContext().MissingCallTermPolicy = HTNMissingCallTermPolicy::FailSilently;
+        Unit.GetExecutionContext().CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
         Calls = 0;
         ASSERT_EQ(Unit.DecomposeTopLevelMethod(), HTN_DECOMPOSITION_SUCCEEDED);
         EXPECT_EQ(Calls, Test.Calls);
@@ -116,21 +116,21 @@ TEST(HTNNestedCallExpressionTest, MissingPoliciesReasonsCountAndExpressionSource
     const std::string Text = Read(Path);
     ASSERT_FALSE(Text.empty());
     const HTNSourceText Source(Text);
-    for (const auto Reason : {HTNMissingCallTermReason::NotRegistered,
-                             HTNMissingCallTermReason::MissingBinding, HTNMissingCallTermReason::MissingInstance})
+    for (const auto Reason : {HTNCallTermErrorReason::NotRegistered,
+                             HTNCallTermErrorReason::MissingBinding, HTNCallTermErrorReason::MissingInstance})
     {
         HTNDatabaseHook Database;
         HTNCallTermRegistry Registry;
         int OuterCalls = 0;
         Registry.Bind("identity", [&OuterCalls](const HTNCallTermArguments& Args) { ++OuterCalls; return HTNAtomOwner(Args[0]); });
-        if (Reason == HTNMissingCallTermReason::MissingBinding)
+        if (Reason == HTNCallTermErrorReason::MissingBinding)
             ASSERT_TRUE(Registry.BindMember("missing_distance_callterm", "agent", {}, {}));
-        if (Reason == HTNMissingCallTermReason::MissingInstance)
+        if (Reason == HTNCallTermErrorReason::MissingInstance)
             ASSERT_TRUE(Registry.BindMember("missing_distance_callterm", "agent",
                 [](void*, const HTNCallTermArguments&) { return HTNAtomOwner(0.1f); }, {}));
         HTNPlannerHook Hook(Database.GetWorldState(), Registry);
         ASSERT_TRUE(Hook.SetGeneratedPlannerDefinition(CreateNestedOperatorCallsHTN_GetDefinition()));
-        for (const auto Policy : {HTNMissingCallTermPolicy::FailSilently, HTNMissingCallTermPolicy::Report})
+        for (const auto Policy : {HTNCallTermErrorPolicy::FailSilently, HTNCallTermErrorPolicy::Report})
             for (const std::string Entry : {"behave", "missing_right", "missing_arithmetic", "missing_deep", "bound_first", "two_attempts", "short_circuit", "missing_task_arithmetic"})
             {
                 SCOPED_TRACE(Entry);
@@ -138,13 +138,13 @@ TEST(HTNNestedCallExpressionTest, MissingPoliciesReasonsCountAndExpressionSource
                 Reports Client;
                 auto& Context = Unit.GetExecutionContext();
                 Context.ClientContext = &Client;
-                Context.MissingCallTermPolicy = Policy;
-                Context.MissingCallTermCallback = Report;
+                Context.CallTermErrorPolicy = Policy;
+                Context.CallTermErrorCallback = Report;
                 for (int Attempt = 0; Attempt < 2; ++Attempt)
                 {
                     Client.Count = 0;
                     EXPECT_EQ(Unit.DecomposeTopLevelMethod(), Entry == "short_circuit" ? HTN_DECOMPOSITION_SUCCEEDED : HTN_DECOMPOSITION_NO_PLAN);
-                    const int ExpectedReports = Policy == HTNMissingCallTermPolicy::FailSilently || Entry == "short_circuit" ? 0 : Entry == "two_attempts" ? 2 : 1;
+                    const int ExpectedReports = Policy == HTNCallTermErrorPolicy::FailSilently || Entry == "short_circuit" ? 0 : Entry == "two_attempts" ? 2 : 1;
                     EXPECT_EQ(Client.Count, ExpectedReports);
                     EXPECT_EQ(OuterCalls, 0);
                     if (ExpectedReports == 0) continue;
@@ -180,7 +180,7 @@ TEST(HTNNestedCallExpressionTest, UnsetKeepsSdkContractForNestedInvocation)
 #endif
         (void)Unit.DecomposeTopLevelMethod();
     };
-    EXPECT_DEATH(Run(), "Configure the missing callterm policy explicitly");
+    EXPECT_DEATH(Run(), "Configure the callterm error policy explicitly");
 #else
     EXPECT_EQ(Unit.DecomposeTopLevelMethod(), HTN_DECOMPOSITION_NO_PLAN);
 #endif

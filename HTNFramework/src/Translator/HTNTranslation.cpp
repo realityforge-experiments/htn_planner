@@ -52,6 +52,13 @@ bool HTNTranslateDomain(const HTNTranslationRequest& inRequest, HTNTranslationRe
         return false;
     }
 
+    if (inRequest.CallFrameCapacity == 0u)
+    {
+        outResult.Failure = HTNTranslationFailure::InvalidOptions;
+        outResult.ErrorMessage = "Call frame capacity must be greater than zero.";
+        return false;
+    }
+
     if (inRequest.BacktrackingCapacity == 0u)
     {
         outResult.Failure = HTNTranslationFailure::InvalidOptions;
@@ -83,6 +90,7 @@ bool HTNTranslateDomain(const HTNTranslationRequest& inRequest, HTNTranslationRe
     Options.BacktrackingPolicy = inRequest.BacktrackingPolicy;
     Options.RuntimeBacktrackingSupport = inRequest.RuntimeBacktrackingSupport;
     Options.BacktrackingCapacity = inRequest.BacktrackingCapacity;
+    Options.CallFrameCapacity = inRequest.CallFrameCapacity;
     for (const std::string& SourceFile : LoadResult.SourceFiles)
         Options.LinkedSourceFiles.emplace_back(MakePortableDomainPath(std::filesystem::path(SourceFile)));
 

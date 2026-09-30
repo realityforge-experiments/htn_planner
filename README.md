@@ -14,11 +14,14 @@ The repository includes:
 - An editor, language server, hot reload example, tests and benchmarks.
 - A packageable Windows x64 SDK with CMake integration.
 
-Version **2.0.3** adds explicit
-variable declarations, fixes nested callterm evaluation, and supports initialization
-time callterm validation. **This update breaks compatibility despite its patch
-version:** migrate assignment syntax, regenerate domain C sources and rebuild the
-host and modules. See the [2.0.3 migration guide](docs/RELEASE_2_0_3.md).
+Version **2.0.4** removes native method/task recursion from generated planners,
+extends callterm error reporting and fixes axiom output assignments/backtracking.
+**It changes the public callterm error API and generated/runtime bridge ABIs
+despite the patch version.** Migrate client configuration, regenerate domains
+and rebuild the host, libraries and domain DLLs together.
+See the [2.0.4 release notes and migration guide](docs/RELEASE_2_0_4.md).
+When upgrading from 2.0.2 or earlier, also follow the
+[2.0.3 migration guide](docs/RELEASE_2_0_3.md).
 
 ## Domain example
 

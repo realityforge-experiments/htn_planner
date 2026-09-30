@@ -5,6 +5,15 @@
 using GeneratedCommit = std::function<void()>;
 using GeneratedSuccess = std::function<void(uint32, const GeneratedCommit&)>;
 
+void EmitUnboundVariableGuard(CodeWriter& W, const ValueRecord& inValue, uint32 inFailure)
+{
+    if (inValue.Kind != HTNIRValueKind::Variable || inValue.VariableSlot == kNoIndex)
+        W.Out << "    goto " << W.Label(inFailure) << ";\n";
+    else
+        W.Out << "    if (HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, "
+              << inValue.VariableSlot << "u) != NULL) goto " << W.Label(inFailure) << ";\n";
+}
+
 void EmitConditionContinuation(CodeWriter& W, const HTNCompilerIR& B, uint32 inCondition,
                                const BoundVariableSet& inBound, uint32 inFailure,
                                const GeneratedSuccess& inSuccess, const std::string& inDomainSymbol);
@@ -55,6 +64,8 @@ void EmitConditionContinuation(CodeWriter& W, const HTNCompilerIR& B, const uint
               << "u, " << (inBegin ? "" : (inResult ? "1, " : "0, ")) << "0);\n";
     };
     Event(true, false);
+    if (C.AssignmentGuardValue != kNoIndex)
+        EmitUnboundVariableGuard(W, B.Values[C.AssignmentGuardValue], Failure);
     const GeneratedSuccess Success = [&](uint32 inRetry, const GeneratedCommit& inCommit) {
         const uint32 Resume = Composite ? W.NewLabel() : inRetry;
         Event(false, true);
@@ -123,6 +134,8 @@ void EmitConditionContinuation(CodeWriter& W, const HTNCompilerIR& B, const uint
         {
             const auto& Parameter = B.Values[Axiom.FirstParameter + I];
             if (B.Strings.Values[Parameter.Text].starts_with("inp_")) Bound.insert(Parameter.Text);
+            if (B.Strings.Values[Parameter.Text].starts_with("out_"))
+                EmitUnboundVariableGuard(W, B.Values[C.FirstArgument + I], Failure);
         }
         W.Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
         EmitGeneratedAxiomBegin(W, B, C, inCondition, inDomainSymbol, Scope);

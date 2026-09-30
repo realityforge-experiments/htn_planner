@@ -1,5 +1,9 @@
 # Documentation
 
+- [2.0.4 release notes and migration](RELEASE_2_0_4.md)
+- [Generated recursion and call-frame capacity](GENERATED_RECURSION.md)
+
+- [2.0.4 axiom assignments and migration](RELEASE_NOTES_AXIOM_ASSIGNMENTS.md)
 - [2.0.3 release notes and migration](RELEASE_2_0_3.md)
 - [Nested callterm evaluation](RELEASE_NOTES_NESTED_CALLS.md)
 
@@ -20,7 +24,7 @@ instructions and engine integration overview.
 - [2.0.0 release notes and migration](RELEASE_2_0_0.md)
 - [Integration use cases](USE_CASES.md)
 - [Client context and type conversion](TYPE_CONVERSION.md)
-- [Missing callterm policy](MISSING_CALLTERMS.md)
+- [Callterm error policy](MISSING_CALLTERMS.md)
 - [Method overloads](METHOD_OVERLOADS.md)
 - [Axiom overloads and backtracking](AXIOM_OVERLOADS.md)
 

@@ -33,60 +33,65 @@ HTNAtomOwner HTNCallTermRegistry::Execute(const std::string& inID,
 {
     const auto It = mEntries.find(inID);
     return InvokeEntry(It == mEntries.end() ? nullptr : &It->second, inID.c_str(), inContext.CallTermBindingContext, inArguments, inSource, inContext.ClientContext,
-                       inContext.MissingCallTermPolicy, inContext.MissingCallTermCallback);
+                       inContext.CallTermErrorPolicy, inContext.CallTermErrorCallback);
 }
 
 HTNAtomOwner HTNCallTermRegistry::InvokeEntry(const Entry* inEntry, const char* inName,
                                              const HTNCallTermBindingContext* inContext,
                                              const HTNCallTermArguments& inArguments,
                                              const HTNCallTermSource* inSource, void* inClientContext,
-                                             HTNMissingCallTermPolicy inPolicy, HTNMissingCallTermCallback inCallback)
+                                             HTNCallTermErrorPolicy inPolicy, HTNCallTermErrorCallback inCallback)
 {
-    const auto Missing = [&](HTNMissingCallTermReason inReason) {
-        assert(inPolicy != HTNMissingCallTermPolicy::Unset &&
-               "Configure the missing callterm policy explicitly before invoking callterms");
-        assert((inPolicy == HTNMissingCallTermPolicy::Unset ||
-                inPolicy == HTNMissingCallTermPolicy::FailSilently ||
-                inPolicy == HTNMissingCallTermPolicy::Report) && "Invalid missing callterm policy");
-        if (inPolicy == HTNMissingCallTermPolicy::Report)
-        {
-            assert(inCallback && "Report policy requires a missing callterm callback");
-            if (inCallback)
-            {
-                HTNMissingCallTermInfo Info{};
-                Info.Name = inName;
-                Info.Reason = inReason;
-                Info.DaemonID = inEntry && !inEntry->DaemonID.empty() ? inEntry->DaemonID.c_str() : nullptr;
-                if (inSource) Info.Source = *inSource;
-                inCallback(inClientContext, &Info);
-            }
-        }
-        return HTNAtomOwner();
-    };
+    HTNCallTermErrorInfo Info{};
+    Info.Name = inName;
+    Info.Reason = HTNCallTermErrorReason::None;
+    Info.DaemonID = inEntry && !inEntry->DaemonID.empty() ? inEntry->DaemonID.c_str() : nullptr;
+    if (inSource) Info.Source = *inSource;
+    Info.ArgumentIndex = UINT32_MAX;
+    Info.ExpectedAtomType = UINT32_MAX;
+    Info.ActualAtomType = UINT32_MAX;
+    Info.ExpectedArgumentCount = inEntry && inEntry->Signature ?
+        static_cast<uint32_t>(inEntry->Signature->size()) : UINT32_MAX;
+    Info.ActualArgumentCount = static_cast<uint32_t>(inArguments.size());
+    HTNAtomOwner Result;
     void* Daemon = nullptr;
     if (const auto Reason = CheckEntry(inEntry, inContext, Daemon))
-        return Missing(*Reason);
-    HTNCallTermArguments Arguments = inArguments;
-    Arguments.mClientContext = inClientContext;
-    return inEntry->Function(Daemon, Arguments);
+        Info.Reason = *Reason;
+    else
+    {
+        HTNCallTermArguments Arguments = inArguments;
+        Arguments.mClientContext = inClientContext;
+        Arguments.mError = &Info;
+        Result = inEntry->Function(Daemon, Arguments);
+    }
+    if (Info.Reason == HTNCallTermErrorReason::None) return Result;
+    assert(inPolicy != HTNCallTermErrorPolicy::Unset && "Configure the callterm error policy explicitly");
+    assert((inPolicy == HTNCallTermErrorPolicy::Unset || inPolicy == HTNCallTermErrorPolicy::FailSilently ||
+            inPolicy == HTNCallTermErrorPolicy::Report) && "Invalid callterm error policy");
+    if (inPolicy == HTNCallTermErrorPolicy::Report)
+    {
+        assert(inCallback && "Report policy requires a callterm error callback");
+        if (inCallback) inCallback(inClientContext, &Info);
+    }
+    return {};
 }
 
-std::optional<HTNMissingCallTermReason> HTNCallTermRegistry::CheckEntry(
+std::optional<HTNCallTermErrorReason> HTNCallTermRegistry::CheckEntry(
     const Entry* inEntry, const HTNCallTermBindingContext* inContext, void*& outDaemon)
 {
     outDaemon = nullptr;
-    if (!inEntry) return HTNMissingCallTermReason::NotRegistered;
-    if (!inEntry->Function) return HTNMissingCallTermReason::MissingBinding;
+    if (!inEntry) return HTNCallTermErrorReason::NotRegistered;
+    if (!inEntry->Function) return HTNCallTermErrorReason::MissingBinding;
     if (inEntry->DaemonSlot != std::numeric_limits<std::size_t>::max())
     {
         outDaemon = inContext ? inContext->GetDaemon(inEntry->DaemonSlot) : nullptr;
-        if (!outDaemon) return HTNMissingCallTermReason::MissingInstance;
+        if (!outDaemon) return HTNCallTermErrorReason::MissingInstance;
     }
     return std::nullopt;
 }
 
 bool HTNCallTermRegistry::ValidateGeneratedCallTerms(const HTNGeneratedPlannerDefinition& inDefinition,
-    const HTNCallTermBindingContext& inContext, HTNMissingCallTermCallback inCallback, void* inClientContext) const
+    const HTNCallTermBindingContext& inContext, HTNCallTermErrorCallback inCallback, void* inClientContext) const
 {
     if (&inContext.GetRegistry() != this || !HTNGeneratedPlanner_ValidateDefinition(&inDefinition))
         return false;
@@ -102,8 +107,9 @@ bool HTNCallTermRegistry::ValidateGeneratedCallTerms(const HTNGeneratedPlannerDe
             Valid = false;
             if (inCallback)
             {
-                const HTNMissingCallTermInfo Info{Requirement.name, *Reason,
-                    Binding && !Binding->DaemonID.empty() ? Binding->DaemonID.c_str() : nullptr, Requirement.source};
+                const HTNCallTermErrorInfo Info{Requirement.name, *Reason,
+                    Binding && !Binding->DaemonID.empty() ? Binding->DaemonID.c_str() : nullptr, Requirement.source,
+                    UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, nullptr};
                 inCallback(inClientContext, &Info);
             }
         }
@@ -131,7 +137,12 @@ bool HTNCallTermRegistry::BindMember(const std::string& inID,
     }
 
     Entry NewEntry;
-    NewEntry.Function = std::move(inFunction);
+    if (inFunction)
+        NewEntry.Function = [Function = std::move(inFunction), Signature = inSignature, ID = inID]
+            (void* inInstance, const HTNCallTermArguments& inArguments) -> HTNAtomOwner {
+                if (!ValidateArguments(ID, Signature, inArguments)) return {};
+                return Function(inInstance, inArguments);
+            };
     NewEntry.Signature = std::move(inSignature);
     NewEntry.DaemonSlot = DaemonIt->second;
     NewEntry.DaemonID = inDaemonID;
@@ -151,10 +162,7 @@ bool HTNCallTermRegistry::ValidateArguments([[maybe_unused]]const std::string& i
 {
     if (inArguments.size() != inSignature.size())
     {
-        HTN_LOG_ERROR("Callterm [{}] expects [{}] argument(s), received [{}]",
-                      inID,
-                      inSignature.size(),
-                      inArguments.size());
+        inArguments.SetError(HTNCallTermErrorReason::ArgumentCountMismatch);
         return false;
     }
 
@@ -163,9 +171,8 @@ bool HTNCallTermRegistry::ValidateArguments([[maybe_unused]]const std::string& i
         const std::optional<HTNAtomType>& ExpectedType = inSignature[Index];
         if (ExpectedType && HTNAtomGetType(inArguments[Index]) != *ExpectedType)
         {
-            HTN_LOG_ERROR("Callterm [{}] argument [{}] has incompatible HTN atom type",
-                          inID,
-                          Index);
+            inArguments.SetError(HTNCallTermErrorReason::ArgumentTypeMismatch,
+                static_cast<uint32_t>(Index), static_cast<uint32_t>(*ExpectedType));
             return false;
         }
     }
@@ -215,7 +222,7 @@ extern "C" int HTNCallTermRegistry_InvokeGeneratedCallTermWithSource(
     const HTNCallTermArguments Arguments(inArguments, inArgumentCount);
     HTNAtomOwner Result = HTNCallTermRegistry::InvokeEntry(Entry, inCallTerm ? inCallTerm->name : nullptr,
                                                          inContext->callterm_binding_context, Arguments, inSource, inContext->client_context,
-                                                         inContext->missing_callterm_policy, inContext->missing_callterm_callback);
+                                                         inContext->callterm_error_policy, inContext->callterm_error_callback);
     if (!Result.IsBound())
         return 0;
     HTNAtom_AssignMove(outResult, Result.Get());

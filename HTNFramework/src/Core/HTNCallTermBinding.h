@@ -31,15 +31,17 @@ HTNCallTermSignature MakeSignature(std::index_sequence<Indices...>)
 }
 
 template<typename ArgumentType>
-bool TryParseArgument(void* inClientContext, const HTNAtom& inAtom, BareType<ArgumentType>& outValue)
+bool TryParseArgument(const HTNCallTermArguments& inArguments, size_t inIndex, BareType<ArgumentType>& outValue)
 {
     static_assert(HTNIsTypeConvertible<ArgumentType>,
                   "No HTN type conversion registered for this callterm argument type");
 
-    if (HTNTryParseType(inClientContext, inAtom, outValue))
+    if (HTNTryParseType(inArguments.GetClientContext(), inArguments[inIndex], outValue))
         return true;
 
-    HTN_LOG_ERROR("Could not convert HTN callterm argument to [{}]", HTNTypeTraits<BareType<ArgumentType>>::Name);
+    const auto Expected = HTNGetExpectedAtomType<ArgumentType>();
+    inArguments.SetError(HTNCallTermErrorReason::ArgumentConversionFailed, static_cast<uint32_t>(inIndex),
+        Expected ? static_cast<uint32_t>(*Expected) : UINT32_MAX, HTNTypeTraits<BareType<ArgumentType>>::Name);
     return false;
 }
 
@@ -57,7 +59,7 @@ bool TryParseArguments(
     (void)std::initializer_list<int>{
         (Success
              ? (Success = TryParseArgument<std::tuple_element_t<Indices, ArgumentsTuple>>(
-                    inArguments.GetClientContext(), inArguments[Indices], std::get<Indices>(outValues)),
+                    inArguments, Indices, std::get<Indices>(outValues)),
                 0)
              : 0)...};
 
@@ -65,17 +67,17 @@ bool TryParseArguments(
 }
 
 template<typename ReturnType>
-HTNAtomOwner MakeResult(void* inClientContext, ReturnType&& inResult)
+HTNAtomOwner MakeResult(const HTNCallTermArguments& inArguments, ReturnType&& inResult)
 {
     using ValueType = BareType<ReturnType>;
     static_assert(HTNIsTypeConvertible<ValueType>,
                   "No HTN type conversion registered for this callterm return type");
 
     HTNAtomOwner Result;
-    if (!HTNTryToAtom(inClientContext, inResult, Result))
+    if (!HTNTryToAtom(inArguments.GetClientContext(), inResult, Result))
     {
-        HTN_LOG_ERROR("Could not convert callterm return value from [{}] to HTNAtom",
-                      HTNTypeTraits<ValueType>::Name);
+        inArguments.SetError(HTNCallTermErrorReason::ReturnConversionFailed, UINT32_MAX,
+            UINT32_MAX, HTNTypeTraits<ValueType>::Name);
         return {};
     }
 
@@ -116,7 +118,7 @@ private:
         if (!TryParseArguments<ArgumentsTuple>(inArguments, ParsedArguments, inIndices))
             return {};
 
-        return MakeResult(inArguments.GetClientContext(), Function(std::get<Indices>(ParsedArguments)...));
+        return MakeResult(inArguments, Function(std::get<Indices>(ParsedArguments)...));
     }
 };
 
@@ -159,7 +161,7 @@ private:
         if (!TryParseArguments<ArgumentsTuple>(inArguments, ParsedArguments, inIndices))
             return {};
 
-        return MakeResult(inArguments.GetClientContext(), (inInstance.*Function)(std::get<Indices>(ParsedArguments)...));
+        return MakeResult(inArguments, (inInstance.*Function)(std::get<Indices>(ParsedArguments)...));
     }
 };
 }

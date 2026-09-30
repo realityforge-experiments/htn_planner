@@ -20,6 +20,7 @@ void PrintUsage()
                  "Options:\n"
                  "  --backtracking-policy=fixed-with-overflow|fixed-capacity (default: fixed-with-overflow)\n"
                  "  --backtracking-capacity=<positive integer> (default: 32)\n"
+                 "  --call-frame-capacity=<positive integer> (default: 8192)\n"
                  "  --runtime-backtracking-support=disabled|enabled (default: disabled)\n"
                  "Example: HTNTranslator Domains/Test/human.domain CreateHumanHTN Generated\n";
 }
@@ -107,12 +108,14 @@ int main(int argc, char** argv)
     HTNGeneratedBacktrackingPolicy BacktrackingPolicy = HTNGeneratedBacktrackingPolicy::FixedWithOverflow;
     HTNGeneratedRuntimeBacktrackingSupport RuntimeBacktrackingSupport = HTNGeneratedRuntimeBacktrackingSupport::Disabled;
     uint32_t BacktrackingCapacity = 32u;
+    uint32_t CallFrameCapacity = 8192u;
 
     for (int ArgumentIndex = 3; ArgumentIndex < argc; ++ArgumentIndex)
     {
         const std::string Argument(argv[ArgumentIndex]);
         const std::string PolicyPrefix = "--backtracking-policy=";
         const std::string CapacityPrefix = "--backtracking-capacity=";
+        const std::string CallFrameCapacityPrefix = "--call-frame-capacity=";
         const std::string RuntimeBacktrackingSupportPrefix = "--runtime-backtracking-support=";
 
         if (Argument.rfind(PolicyPrefix, 0u) == 0u)
@@ -126,6 +129,16 @@ int main(int argc, char** argv)
             {
                 std::cerr << "HTNTranslator: unknown backtracking policy '" << Value << "'.\n";
                 PrintUsage();
+                return 1;
+            }
+            continue;
+        }
+
+        if (Argument.rfind(CallFrameCapacityPrefix, 0u) == 0u)
+        {
+            if (!ParsePositiveUint32(Argument.substr(CallFrameCapacityPrefix.size()), CallFrameCapacity))
+            {
+                std::cerr << "HTNTranslator: call frame capacity must be a positive integer.\n";
                 return 1;
             }
             continue;
@@ -182,6 +195,7 @@ int main(int argc, char** argv)
     Request.BacktrackingPolicy = BacktrackingPolicy;
     Request.RuntimeBacktrackingSupport = RuntimeBacktrackingSupport;
     Request.BacktrackingCapacity = BacktrackingCapacity;
+    Request.CallFrameCapacity = CallFrameCapacity;
 
     HTNTranslationResult Result;
     if (!HTNTranslateDomain(Request, Result))
@@ -195,6 +209,7 @@ int main(int argc, char** argv)
               << "  Entry point: " << Request.EntryPointName << "\n"
               << "  Backtracking: " << (BacktrackingPolicy == HTNGeneratedBacktrackingPolicy::FixedWithOverflow ? "fixed-with-overflow" : "fixed-capacity")
               << " (capacity " << BacktrackingCapacity << ")\n"
+              << "  Call frames: fixed capacity " << CallFrameCapacity << "\n"
               << "  Runtime backtracking support: "
               << (RuntimeBacktrackingSupport == HTNGeneratedRuntimeBacktrackingSupport::Enabled ? "enabled" : "disabled") << "\n"
               << "  Output: " << Result.OutputSourcePath.string() << "\n";

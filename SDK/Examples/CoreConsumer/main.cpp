@@ -41,11 +41,11 @@ static bool ValidateFactWrites()
 struct MissingReport
 {
     int Count = 0;
-    HTNMissingCallTermReason Reason{};
+    HTNCallTermErrorReason Reason{};
     std::string Name;
 };
 
-static void ReportMissing(void* inClient, const HTNMissingCallTermInfo* inInfo)
+static void ReportMissing(void* inClient, const HTNCallTermErrorInfo* inInfo)
 {
     auto& Report = *static_cast<MissingReport*>(inClient);
     ++Report.Count;
@@ -66,18 +66,18 @@ static bool ValidateMissingCallTerms()
     Context.CallTermBindingContext = &Bindings;
     Context.ClientContext = &Report;
     const char* Names[] = {"absent", "empty", "member"};
-    const HTNMissingCallTermReason Reasons[] = {HTNMissingCallTermReason::NotRegistered,
-        HTNMissingCallTermReason::MissingBinding, HTNMissingCallTermReason::MissingInstance};
+    const HTNCallTermErrorReason Reasons[] = {HTNCallTermErrorReason::NotRegistered,
+        HTNCallTermErrorReason::MissingBinding, HTNCallTermErrorReason::MissingInstance};
     const std::vector<HTNAtomOwner> Arguments;
-    const auto Check = [&](HTNMissingCallTermPolicy inPolicy, HTNMissingCallTermCallback inCallback)
+    const auto Check = [&](HTNCallTermErrorPolicy inPolicy, HTNCallTermErrorCallback inCallback)
     {
-        Context.MissingCallTermPolicy = inPolicy;
-        Context.MissingCallTermCallback = inCallback;
+        Context.CallTermErrorPolicy = inPolicy;
+        Context.CallTermErrorCallback = inCallback;
         HTNGeneratedPlannerContext Generated{};
         Generated.callterm_binding_context = &Bindings;
         Generated.client_context = &Report;
-        Generated.missing_callterm_policy = inPolicy;
-        Generated.missing_callterm_callback = inCallback;
+        Generated.callterm_error_policy = inPolicy;
+        Generated.callterm_error_callback = inCallback;
         for (size_t I = 0; I < 3; ++I)
         {
             const int Before = Report.Count;
@@ -86,7 +86,7 @@ static bool ValidateMissingCallTerms()
             const auto Call = HTNCallTermRegistry_ResolveGeneratedCallTerm(&Bindings, Names[I]);
             if (HTNCallTermRegistry_InvokeGeneratedCallTermWithSource(&Generated, &Call, nullptr, 0, Result.Get(), nullptr) ||
                 Result.IsBound()) return false;
-            const bool Reports = inPolicy == HTNMissingCallTermPolicy::Report && inCallback;
+            const bool Reports = inPolicy == HTNCallTermErrorPolicy::Report && inCallback;
             if (Report.Count != Before + (Reports ? 2 : 0)) return false;
             if (Reports && (Report.Reason != Reasons[I] || Report.Name != Names[I])) return false;
         }
@@ -97,14 +97,14 @@ static bool ValidateMissingCallTerms()
             HTNCallTermRegistry_InvokeGeneratedCallTermWithSource(&Generated, &Call, nullptr, 0, Result.Get(), nullptr) &&
             Result.IsBound() && Report.Count == Before;
     };
-    if (!Check(HTNMissingCallTermPolicy::FailSilently, ReportMissing) ||
-        !Check(HTNMissingCallTermPolicy::Report, ReportMissing)) return false;
+    if (!Check(HTNCallTermErrorPolicy::FailSilently, ReportMissing) ||
+        !Check(HTNCallTermErrorPolicy::Report, ReportMissing)) return false;
 #ifdef NDEBUG
     // Use return values, not assert: both this consumer and the Release SDK must
     // exercise the production fallback with assertions compiled out.
-    if (!Check(HTNMissingCallTermPolicy::Unset, ReportMissing) ||
-        !Check(static_cast<HTNMissingCallTermPolicy>(99), ReportMissing) ||
-        !Check(HTNMissingCallTermPolicy::Report, nullptr)) return false;
+    if (!Check(HTNCallTermErrorPolicy::Unset, ReportMissing) ||
+        !Check(static_cast<HTNCallTermErrorPolicy>(99), ReportMissing) ||
+        !Check(HTNCallTermErrorPolicy::Report, nullptr)) return false;
     std::puts("Missing callterm production fallbacks: PASS (NDEBUG)");
 #endif
     return true;
@@ -146,7 +146,7 @@ int main()
         return Finish(3);
 
     HTNGeneratedPlannerContext Context{};
-    Context.missing_callterm_policy = HTNMissingCallTermPolicy::FailSilently;
+    Context.callterm_error_policy = HTNCallTermErrorPolicy::FailSilently;
     Context.world_state = &WorldState;
     Context.callterm_binding_context = &BindingContext;
     Context.backtracking_mode = HTN_BACKTRACKING_ALL;

@@ -529,7 +529,10 @@ public:
                 Sequence->Range = inNode->Range;
                 Sequence->FileIndex = inNode->FileIndex;
                 Sequence->Children = std::move(Prefix);
-                return AddCondition(Sequence);
+                const uint32 SequenceIndex = AddCondition(Sequence);
+                const uint32 GuardValue = AddValue(*inNode->Output);
+                Conditions[SequenceIndex].AssignmentGuardValue = GuardValue;
+                return SequenceIndex;
             }
         }
 
@@ -1059,7 +1062,7 @@ bool ValidateCallTermBindings(const HTNCompilerIR& inBuilder, std::string& outEr
             if (Parameter.Kind != HTNIRValueKind::Variable)
                 continue;
             const std::string& Name = inBuilder.Strings.Values[Parameter.Text];
-            if (!StartsWithText(Name, "out_"))
+            if (StartsWithText(Name, "inp_"))
                 Initial[Parameter.Text] = true;
         }
         if (!ValidateCallTermCondition(inBuilder, Axiom.Condition, Initial, outError))

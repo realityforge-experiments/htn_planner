@@ -22,6 +22,7 @@ extern "C" int HTNGeneratedPlanner_ValidateDefinition(const HTNGeneratedPlannerD
         inDefinition->execution_storage_size == 0u ||
         !inDefinition->initialize_execution_storage ||
         !inDefinition->destroy_execution_storage ||
+        !inDefinition->get_execution_info ||
         !inDefinition->decompose_call ||
         (inDefinition->fact_count != 0u && !inDefinition->fact_names) ||
         (inDefinition->callterm_requirement_count != 0u && !inDefinition->callterm_requirements))

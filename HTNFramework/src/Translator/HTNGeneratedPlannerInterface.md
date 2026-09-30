@@ -19,14 +19,15 @@ operation: the first compatible table wins and later calls are accepted only whe
 identical. Shipping builds continue to compile generated domains directly into the executable.
 
 The host table is `HTNHostRuntimeAPI`, declared in `Translator/HTNRuntimeBridge.h`.
-Its `HTN_RUNTIME_BRIDGE_ABI_VERSION` has revision 6: callterm invocation receives the execution descriptor, including
-client context, missing-callterm policy and report callback. Rebuild the host, bridge and imported domain modules together; old bridge
+Its `HTN_RUNTIME_BRIDGE_ABI_VERSION` has revision 8: callterm invocation receives the execution descriptor, including
+client context, callterm error policy and report callback. The callback reports missing callterms and argument/return conversion failures.
+Rebuild the host, bridge and imported domain modules together; old bridge
 tables are rejected. This is separate from the planner descriptor ABI below.
 Callterm C declarations live in `Translator/HTNCallTermBridge.h`; the
 `HTNGeneratedCallTerm` representation and resolve export are unchanged; both
 invoke exports now receive `HTNGeneratedPlannerContext` instead of bindings.
 New generated code uses `HTNCallTermRegistry_InvokeGeneratedCallTermWithSource`.
-See [Missing callterm policy](../../../docs/MISSING_CALLTERMS.md) for client configuration.
+See [Callterm error policy](../../../docs/MISSING_CALLTERMS.md) for client configuration.
 
 The module must outlive its definition and every prepared/execution storage object created from it.
 For a custom core host, destroy all execution/prepared storage and stop using the
@@ -38,7 +39,7 @@ hook definitions first. DLL loading/reload/rollback remains the consumer's respo
 
 **Do not delete facts from the world state while a decomposition is in progress.**
 This is a planner assumption and a caller responsibility, not a runtime-enforced
-restriction. It applies to interpreted and generated planning, including callterms,
+restriction. It applies to generated planning, including callterms,
 client callbacks and other code accessing the same world state.
 
 Do not remove fact rows, clear fact tables or reset/replace the world state during
@@ -55,15 +56,22 @@ decompositions when no active decomposition uses that world state.
 ## ABI version
 
 The status enum is `HTNDecompositionStatus`, declared in
-`Core/HTNDecompositionStatus.h`. Its `HTN_DECOMPOSITION_*` values are unchanged.
+`Core/HTNDecompositionStatus.h`. Existing numeric values are preserved;
+`HTN_DECOMPOSITION_CALL_FRAME_CAPACITY_EXCEEDED` is appended for exhaustion of
+the generated fixed call-frame array.
 The optional HTNIntegration entry point is `HTNPlanningUnit::DecomposeTopLevelMethod()` and its
 existing overloads. It installs a plan and may invoke planning callterms, but
 does not execute the resulting primitive tasks. Consumers continue to resolve
 and complete primitives through the existing planning-unit API.
 
-These are source API renames without aliases. Rebuild C++ consumers and regenerate
-domain sources; the C descriptor ABI, callbacks' binary representation and
-generated entry point/accessor names are unchanged.
+The descriptor includes `get_execution_info(storage)`, which returns a borrowed
+`HTNGeneratedExecutionInfo` with configured call-frame capacity, peak frames,
+bytes per frame and the last error. Peak and error reset on each decomposition.
+The accessor returns null for null storage. See [generated recursion](../../../docs/GENERATED_RECURSION.md).
+
+The descriptor layout and callterm error callback payload have changed. Rebuild
+C++ consumers and regenerate/recompile domains together. Generated entry point
+and definition accessor names remain unchanged, as does the atom layout.
 
 `HTNGeneratedPlannerDefinition::abi_version` is the first field of every exported descriptor.
 The host compares it with `HTN_GENERATED_PLANNER_ABI_VERSION` before reading storage sizes,
@@ -72,8 +80,9 @@ the core function `HTNGeneratedPlanner_ValidateDefinition()`. It requires no hoo
 storage allocation or DLL loader. HTNIntegration's hook calls the same function
 and preserves the selected definition when a replacement is rejected.
 
-The value contains the `0x4854` HTN ABI marker, a schema revision in its low 16 bits (currently
-`1`), and two build-option bits that alter the descriptor layout:
+The value contains the `0x4854` HTN ABI marker, a schema revision in its low 16 bits
+(currently `7`, or `8` with decomposition debugging), and two build-option bits
+that alter the descriptor layout:
 
 | Bit | Required ABI option |
 | --- | --- |
@@ -238,10 +247,10 @@ The CLI option is `--runtime-backtracking-support=disabled|enabled` and defaults
 Set `HTNGeneratedPlannerContext::client_context` for core execution, or
 `HTNPlannerExecutionContext::ClientContext` through the integration hook.
 The integration planning units expose `GetExecutionContext()`; set ClientContext,
-MissingCallTermPolicy, MissingCallTermCallback and BacktrackingMode directly.
+CallTermErrorPolicy, CallTermErrorCallback and BacktrackingMode directly.
 They copy runtime options into each execution, including deferred calls. The borrowed pointer is not kept in bindings
-or cached generated storage. Converters and missing-callterm callbacks receive it.
+or cached generated storage. Converters and callterm error callbacks receive it.
 
-This changes the generated execution ABI: plain `0x48540004`, debug `0x48550005`,
-profiling `0x48560004`, debug/profiling `0x48570005`. Regenerate and rebuild domains,
+The current generated planner ABI is: plain `0x48540007`, debug `0x48550008`,
+profiling `0x48560007`, debug/profiling `0x48570008`. Regenerate and rebuild domains,
 host and runtime bridge together. See [conversion migration](../../../docs/TYPE_CONVERSION.md).

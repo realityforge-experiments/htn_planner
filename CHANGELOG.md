@@ -3,6 +3,31 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
+## 2.0.4 - Unreleased
+
+**Breaking compatibility despite the patch version:** migrate the callterm error
+API, regenerate domain C sources and rebuild the host, libraries and domain DLLs.
+This replaces the earlier local 2.0.4 candidate; do not reuse its binaries.
+
+- Replace native method/task recursion with a generated iterative dispatcher and
+  fixed call-frame storage. `--call-frame-capacity=N` selects the capacity
+  (default 8192); exhaustion reports the configured limit and how to increase it.
+- Expose `get_execution_info` for configured capacity, peak frames, frame size
+  and the last error. Preserve rollback and storage reuse after exhaustion.
+- Unify missing-callterm and argument/return conversion failures under
+  `HTNCallTermErrorPolicy`, with one client report per failed invocation.
+- Support explicit assignment to unused axiom `?out_` and `?io_` parameters,
+  including literal, arithmetic and callterm initializers. Preserve output
+  propagation, multiple solutions and rollback during backtracking.
+- Require pure `?out_` arguments to arrive unbound. Assignment to a bound IO
+  slot fails before its initializer runs. Reject unknown variables in axiom
+  expressions with file, line and column diagnostics.
+- Update generated debugger/demo reporting and add recursion, capacity recovery,
+  nested-callterm and axiom/IO regression coverage.
+- **Compatibility:** planner descriptor and RuntimeBridge ABI revisions change;
+  existing status values and `HTNAtom` layout remain unchanged. See
+  [2.0.4 migration notes](docs/RELEASE_2_0_4.md).
+
 ## 2.0.3 - 2026-09-29
 
 **Breaking compatibility despite the patch version:** migrate assignments and

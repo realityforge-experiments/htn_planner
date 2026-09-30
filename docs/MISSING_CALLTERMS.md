@@ -1,4 +1,4 @@
-# Missing callterm policy
+# Callterm error policy
 
 Nested `(call ...)` expressions in comparisons and arithmetic use this same
 policy. Reports point to the call expression itself, including when its result is
@@ -10,7 +10,7 @@ through `HTNPlannerExecutionContext` (reference integration) or
 only registry/daemon configuration and do not own policies or callbacks.
 
 ```cpp
-void ReportMissingCallTerm(void* clientContext, const HTNMissingCallTermInfo* info)
+void ReportCallTermError(void* clientContext, const HTNCallTermErrorInfo* info)
 {
     auto& engine = *static_cast<EngineHTNContext*>(clientContext);
     // Use engine.Diagnostics and info->Reason / Name / DaemonID / Source.
@@ -18,8 +18,8 @@ void ReportMissingCallTerm(void* clientContext, const HTNMissingCallTermInfo* in
 
 auto& execution = planningUnit.GetExecutionContext();
 execution.ClientContext = &engineContext;
-execution.MissingCallTermPolicy = HTNMissingCallTermPolicy::Report;
-execution.MissingCallTermCallback = ReportMissingCallTerm;
+execution.CallTermErrorPolicy = HTNCallTermErrorPolicy::Report;
+execution.CallTermErrorCallback = ReportCallTermError;
 execution.BacktrackingMode = HTN_BACKTRACKING_ALL;
 ```
 
@@ -35,32 +35,49 @@ Core-only generated hosts use the equivalent direct fields:
 HTNGeneratedPlannerContext execution{};
 execution.callterm_binding_context = &bindings;
 execution.client_context = &engineContext;
-execution.missing_callterm_policy = HTNMissingCallTermPolicy::Report;
-execution.missing_callterm_callback = ReportMissingCallTerm;
+execution.callterm_error_policy = HTNCallTermErrorPolicy::Report;
+execution.callterm_error_callback = ReportCallTermError;
 // Also provide world_state, backtracking_mode, prepared_storage and execution_storage.
 ```
 
-C clients use `HTN_MISSING_CALLTERM_UNSET`, `HTN_MISSING_CALLTERM_FAIL_SILENTLY`
-and `HTN_MISSING_CALLTERM_REPORT`. Policy/reason enums use 32-bit representations
+C clients use `HTN_CALLTERM_ERROR_UNSET`, `HTN_CALLTERM_ERROR_FAIL_SILENTLY`
+and `HTN_CALLTERM_ERROR_REPORT`. Policy/reason enums use 32-bit representations
 and the callback takes an info pointer in both C and C++.
 
 ## Policy and failure behavior
 
-- `Unset` is zero, the initial value of a zero-initialized descriptor. A missing
-  callterm triggers an SDK assert with an explicit configuration message.
+- `Unset` is zero, the initial value of a zero-initialized descriptor. An invocation error triggers an SDK assert with an explicit configuration message.
 - `FailSilently` returns failure without logging or reporting.
 - `Report` invokes the callback with the current execution's client pointer,
   then returns failure if the callback returns. The client decides whether to
   log, assert or terminate. A null callback triggers an SDK assert.
-- Unknown enum values also assert on a missing invocation.
+- Unknown enum values also assert on an invocation error.
 
 With assertions disabled, invalid/missing configuration fails safely without
 calling a null callback. Valid callterms execute normally even with `Unset`;
-configuration checks occur when a missing invocation must be handled.
-Argument/return conversion failures and a bound callable returning false/unbound
-are ordinary callterm failures, not missing-callterm reports.
+configuration checks occur when an invocation error must be handled.
+Argument type/count mismatches and converter failures use this same policy.
+A callable returning false/unbound normally is not an invocation error and does
+not trigger the callback. `Report` runs exactly once per failed invocation;
+backtracking may legitimately attempt that call again. Failed call/arithmetic
+expressions used as task arguments fail that task attempt; generated execution
+does not append a primitive task containing that failed result.
 
 ## Reasons and provenance
+
+- `ArgumentCountMismatch`: the typed binding's arity does not match the call.
+- `ArgumentTypeMismatch`: the supplied atom type does not match the signature.
+- `ArgumentConversionFailed`: the converter rejected a representation that
+  passed the signature check (for example, a stale entity ID).
+- `ReturnConversionFailed`: the function ran but its result could not be converted.
+
+`ArgumentIndex` is zero-based (`UINT32_MAX` when not applicable).
+`ExpectedArgumentCount` and `ActualArgumentCount` describe the invocation.
+`ExpectedAtomType` and `ActualAtomType` contain `HTNAtomType` numeric values,
+with `UINT32_MAX` for unavailable metadata. `ExpectedTypeName` is available for
+converter failures. Type/count errors prevent calling the client function.
+Raw/untyped bindings cannot validate an unspecified signature automatically.
+
 
 - `NotRegistered`: the name is absent from the registry.
 - `MissingBinding`: the registry entry has no callable.
@@ -93,7 +110,18 @@ See the [world-state decomposition contract](../HTNFramework/src/Translator/HTNG
 
 ## Migration and ABI
 
-Remove `SetMissingCallTermPolicy` calls on bindings. Assign the execution's policy
+The unified API replaces `HTNMissingCallTermPolicy/Reason/Info/Callback` with
+`HTNCallTermErrorPolicy/Reason/Info/Callback` in `Core/HTNCallTermError.h`.
+Rename execution fields to `CallTermErrorPolicy` / `CallTermErrorCallback`
+(or `callterm_error_policy` / `callterm_error_callback` for core generated hosts).
+Rebuild the host, SDK libraries, and generated modules together: the callback
+payload has expanded and both planner and RuntimeBridge ABI revisions changed.
+Regenerate domains with the matching translator. `HTNAtom` layout is unchanged.
+Initialization validation keeps reporting missing registrations/bindings/instances;
+argument conversion requires actual runtime values and is checked at invocation.
+
+
+Remove legacy `SetMissingCallTermPolicy` calls on bindings. Assign the execution's policy
 and callback directly. Change report callbacks from an info reference to a pointer.
 Both C invocation exports now take an `HTNGeneratedPlannerContext*` as their first
 argument; resolving a slot still takes the binding context. The C++ registry
@@ -101,7 +129,9 @@ argument; resolving a slot still takes the binding context. The C++ registry
 
 The initial policy implementation used planner ABI versions plain `0x48540004`,
 debug `0x48550005`, profiling `0x48560004`, debug/profiling `0x48570005`.
-See initialization validation below for the current descriptor revisions.
+With the generated recursion update, 2.0.4 uses planner ABI plain
+`0x48540007`, debug `0x48550008`, profiling `0x48560007`, debug+profiling
+`0x48570008`, and RuntimeBridge revision 8.
 Regenerate domains and rebuild hosts, runtime bridge and modules together.
 Old definitions/tables are rejected; the atom and cached-callterm layouts remain
 unchanged. See [type conversions](TYPE_CONVERSION.md) for converter migration.
@@ -129,13 +159,13 @@ instances, validate all required call sites explicitly:
 HTNCallTermBindingContext Bindings(Registry);
 Bindings.SetDaemon("agent", &Agent);
 const bool Ready = Registry.ValidateGeneratedCallTerms(
-    *Definition, Bindings, ReportMissingCallTerm, ClientContext);
+    *Definition, Bindings, ReportCallTermError, ClientContext);
 // The host decides whether a false result should prevent initialization.
 ```
 
-The callback has the existing `HTNMissingCallTermCallback` signature. Validation
+The callback has the existing `HTNCallTermErrorCallback` signature. Validation
 shares runtime checks for `NotRegistered`, `MissingBinding` and `MissingInstance`,
-in that order. It never executes callterms and does not use the runtime missing
+in that order. It never executes callterms and does not use the runtime error
 policy. An omitted callback still returns the correct success/failure result.
 Reports are synchronous, with borrowed name, daemon ID and source data; copy data
 that must outlive the callback. Do not mutate the registry or bindings from the
@@ -153,6 +183,7 @@ normal runtime checks remain active because instances can change afterward.
 
 This adds a call-site table to `HTNGeneratedPlannerDefinition`. Regenerate and
 recompile domain modules and rebuild their host with matching headers. Planner ABI
-versions are now plain `0x48540005`, debug `0x48550006`, profiling `0x48560005`,
-and debug/profiling `0x48570006`. `HTNAtom` and runtime bridge function signatures
+versions for the call-site-table introduction were plain `0x48540005`, debug
+`0x48550006`, profiling `0x48560005`, and debug/profiling `0x48570006`.
+The unified error policy increments those revisions as listed under migration. `HTNAtom` and runtime bridge function signatures
 are unchanged. Existing published SDK artifacts are not modified.

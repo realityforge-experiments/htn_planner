@@ -49,7 +49,7 @@ static bool RunCoverage(GetDefinitionFn inGet)
         HTNGeneratedPlannerContext Context{};
         Context.world_state = &World;
         Context.callterm_binding_context = &Bindings;
-        Context.missing_callterm_policy = HTNMissingCallTermPolicy::FailSilently;
+        Context.callterm_error_policy = HTNCallTermErrorPolicy::FailSilently;
         Context.backtracking_mode = HTN_BACKTRACKING_ALL;
         Context.prepared_storage = Prepared;
         Context.execution_storage = Execution;

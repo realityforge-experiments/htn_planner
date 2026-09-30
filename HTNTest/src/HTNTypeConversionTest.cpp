@@ -241,6 +241,7 @@ TEST(HTNTypeConversionTest, StaticAndMemberBindingsUseEachInvocationContext)
     HTNPlannerExecutionContext Execution{};
     Execution.CallTermBindingContext = &Context;
     Execution.ClientContext = &Second;
+    Execution.CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
     EXPECT_FALSE(Registry.Execute("member", Execution, Arguments).IsBound());
     EXPECT_EQ(Daemon.Calls, Calls);
 }
@@ -265,6 +266,7 @@ TEST(HTNTypeConversionTest, GeneratedNestedCallsPropagateClientContextAcrossShar
     ASSERT_TRUE(HTN_CALLTERM_SET_DAEMON(SecondContext, EntityDaemon, &SecondDaemon));
     HTNPlanningUnit FirstUnit(Database, FirstHook, "nested"), SecondUnit(Database, SecondHook, "nested");
     FirstUnit.SetClientContext(&First);
+    FirstUnit.GetExecutionContext().CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
     SecondUnit.SetClientContext(&Second);
     for (int Iteration = 0; Iteration < 2; ++Iteration)
     {

@@ -1,8 +1,11 @@
 # HTN SDK
 
-Version 2.0.3 requires assignment syntax migration and domain regeneration despite
-its patch version. Rebuild the host and modules with matching headers and binaries.
-See [2.0.3 migration](docs/RELEASE_2_0_3.md) before replacing an existing SDK.
+Version 2.0.4 adds generated iterative recursion, unified callterm errors and
+axiom output assignments. **The callterm API and planner/RuntimeBridge ABIs
+change despite the patch version.** Regenerate all domains and rebuild the
+host, libraries and modules using this package. Replace any earlier 2.0.4 candidate.
+See [2.0.4 migration](docs/RELEASE_2_0_4.md). For upgrades from 2.0.2 or earlier,
+also follow [2.0.3 migration](docs/RELEASE_2_0_3.md).
 
 Windows x64, MSVC v143, C++20 clients and C11 generated domains.
 

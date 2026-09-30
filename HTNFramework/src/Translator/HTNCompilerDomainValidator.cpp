@@ -60,10 +60,11 @@ HTNAssignmentScopeNode AssignmentScope(const AST::ConditionPtr& Condition)
 }
 
 bool ValidateAssignments(const AST::ConditionPtr& Condition, const std::vector<AST::ValuePtr>& Parameters,
-                         const std::vector<std::string>& Files, HTNDiagnosticSink& Diagnostics)
+                         const std::vector<std::string>& Files, HTNDiagnosticSink& Diagnostics, bool IsAxiom = false)
 {
     std::unordered_set<std::string> Seen;
-    for (const auto& Parameter : Parameters) Seen.insert(Text(Parameter));
+    for (const auto& Parameter : Parameters)
+        if (HTNAssignmentParameterIsInitiallyUsed(Text(Parameter), IsAxiom)) Seen.insert(Text(Parameter));
     return HTNValidateAssignmentScope(AssignmentScope(Condition), Seen,
         [&](const HTNSourceRange& Range, const std::string& Message) {
             Diagnostics.Error(Condition ? File(Files, Condition->FileIndex) : std::string{}, Message,
@@ -486,7 +487,14 @@ bool HTNValidateCompilerDomainModules(const std::vector<HTNCompilerAST::Domain>&
             Valid = ValidateMethodVariables(*Method, inSourceFiles, outDiagnostics) && Valid;
         }
         for (const auto& Axiom : Module.Axioms)
-            Valid = ValidateAssignments(Axiom->Body, Axiom->Parameters, inSourceFiles, outDiagnostics) && Valid;
+        {
+            Valid = ValidateAssignments(Axiom->Body, Axiom->Parameters, inSourceFiles, outDiagnostics, true) && Valid;
+            std::unordered_set<std::string> Variables;
+            std::unordered_set<std::string> Singletons;
+            for (const auto& Parameter : Axiom->Parameters) Variables.emplace(Text(Parameter));
+            DeclareVariables(Axiom->Body, Variables);
+            Valid = ValidateConditionVariables(Axiom->Body, Variables, Singletons, inSourceFiles, outDiagnostics) && Valid;
+        }
         for (const auto& Axiom : Module.Axioms)
             for (const auto& Parameter : Axiom->Parameters)
                 if (!Text(Parameter).starts_with("inp_") && !Text(Parameter).starts_with("out_") &&

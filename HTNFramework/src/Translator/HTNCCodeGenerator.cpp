@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
@@ -1306,7 +1307,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                        const std::string& SourceFile, const std::vector<std::string>& LinkedSourceFiles,
                        const HTNGeneratedBacktrackingPolicy inBacktrackingPolicy,
                        const HTNGeneratedRuntimeBacktrackingSupport inRuntimeBacktrackingSupport,
-                       const uint32 inBacktrackingCapacity)
+                       const uint32 inBacktrackingCapacity,
+                       const uint32 inCallFrameCapacity)
 {
     CodeWriter W;
     auto& Out = W.Out;
@@ -1733,7 +1735,35 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "    uint64_t variable_frame_id;\n";
     Out << "} " << Prefix << "_PENDING_CONTINUATION_ENTRY;\n\n";
 
+    size_t MaxMethodSnapshotCount = 1u;
+    for (const auto& Method : B.Methods)
+    {
+        size_t Count = 0u;
+        for (const uint64_t Mask : Method.VariableSlotMask)
+            Count += std::popcount(Mask);
+        MaxMethodSnapshotCount = std::max(MaxMethodSnapshotCount, Count);
+    }
+
+    // Suspended generated functions own their branch retry state. Native C
+    // frames never survive a dispatcher step, including non-tail calls.
+    Out << "typedef struct " << Prefix << "_CALL_FRAME\n{\n";
+    Out << "    struct " << Prefix << "_CALL_FRAME* parent;\n";
+    Out << "    HTNGeneratedTaskContinuationFn function;\n";
+    Out << "    uint32_t resume;\n";
+    Out << "    int child_result;\n";
+    Out << "    int32_t retry_plan_size;\n";
+    Out << "    uint32_t retry_pending_base;\n";
+    Out << "    uint64_t retry_frame;\n";
+    Out << "    HTNAtom retry_values[" << MaxMethodSnapshotCount << "u];\n";
+    Out << "    uint8_t retry_bound[" << MaxMethodSnapshotCount << "u];\n";
+    Out << "} " << Prefix << "_CALL_FRAME;\n\n";
+
     Out << "typedef struct " << Prefix << "_EXECUTION_STORAGE\n{\n";
+    Out << "    " << Prefix << "_CALL_FRAME call_frames[" << inCallFrameCapacity << "u];\n";
+    Out << "    uint32_t call_frame_count;\n";
+    Out << "    HTNGeneratedExecutionInfo execution_info;\n";
+    Out << "    " << Prefix << "_CALL_FRAME* call_frame;\n";
+    Out << "    HTNGeneratedTaskContinuationFn next_function;\n";
     if (inBacktrackingPolicy == HTNGeneratedBacktrackingPolicy::FixedWithOverflow)
         Out << "    HTNGeneratedBacktrackingOverflow* backtracking_overflow;\n";
 #if defined(HTN_PROFILE_DETAILED) || defined(HTN_GENERATED_EXECUTION_PROFILING)
@@ -1797,6 +1827,13 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
     Out << "    storage->structural_counters = NULL;\n";
     Out << "#endif\n";
+    Out << "    storage->call_frame_count = 0u;\n";
+    Out << "    storage->execution_info.call_frame_capacity = " << inCallFrameCapacity << "u;\n";
+    Out << "    storage->execution_info.call_frame_size = sizeof(" << Prefix << "_CALL_FRAME);\n";
+    Out << "    storage->execution_info.peak_call_frames = 0u;\n";
+    Out << "    storage->execution_info.last_error = NULL;\n";
+    Out << "    storage->call_frame = NULL;\n";
+    Out << "    storage->next_function = NULL;\n";
     Out << "    storage->variables.values = storage->variable_values;\n";
     Out << "    storage->variables.bound_mask = storage->variable_bound_mask;\n";
     Out << "    storage->variables.value_count = " << GeneratedVariableCount << "u;\n";
@@ -1838,6 +1875,9 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "    return ((" << Prefix << "_EXECUTION_STORAGE*)raw_storage)->profiling;\n";
     Out << "}\n\n";
 #endif
+
+    Out << "static const HTNGeneratedExecutionInfo* " << Prefix << "_GET_EXECUTION_INFO(const void* raw_storage)\n{\n";
+    Out << "    return raw_storage ? &((const " << Prefix << "_EXECUTION_STORAGE*)raw_storage)->execution_info : NULL;\n}\n\n";
 
     // One immutable descriptor is enough: metadata, opaque-storage lifecycle and
     // entry point all describe the same generated planner. Keep the public entry
@@ -1896,7 +1936,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << ",\n    &" << EntryPointName << ",\n";
     Out << "    " << Prefix << "_FACT_NAMES,\n";
     Out << "    " << B.FactStringIds.size() << "u,\n";
-    Out << "    " << Prefix << "_CALLTERM_REQUIREMENTS, " << RequirementCount << "u\n};\n\n";
+    Out << "    " << Prefix << "_CALLTERM_REQUIREMENTS, " << RequirementCount << "u,\n";
+    Out << "    " << Prefix << "_GET_EXECUTION_INFO\n};\n\n";
 
     // Axiom call semantics are fully specialized here. Generated helpers own
     // the exact caller-slot save/restore sequence as well as input/output
@@ -2189,9 +2230,9 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     }
 
     // Task identity and method targets are compile-time properties. Pending work
-    // preserves the planning snapshot at each task, while each
-    // entry stores its generated continuation directly: there is no task-id
-    // switch/dispatcher in generated code.
+    // preserves the planning snapshot at each task. Each entry stores its
+    // generated continuation directly. An iterative dispatcher drives these
+    // functions without a native recursive call chain.
     std::vector<std::string> MethodFunctions(B.Methods.size());
     std::vector<std::string> TaskFunctions(B.Tasks.size());
     for (size_t M = 0; M < B.Methods.size(); ++M)
@@ -2209,9 +2250,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
 
     // Compile-time self-tail-call detection. A task record is an occurrence in one
     // branch, so it is safe to mark it when it is the final task of that branch
-    // and resolves to the method that owns the branch. The dispatcher already
-    // trampolines tasks, therefore lowering a self tail-call means reusing the
-    // current logical variable frame rather than preserving a dead caller frame.
+    // and resolves to the method that owns the branch. This lets argument setup
+    // omit unnecessary copies; explicit call frames still preserve retry state.
     std::vector<int> SelfTailMethodByTask(B.Tasks.size(), -1);
     for (size_t MethodIndex = 0; MethodIndex < B.Methods.size(); ++MethodIndex)
     {
@@ -2418,6 +2458,43 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "    return continuation;\n";
     Out << "}\n\n";
 
+    // A result of two suspends the active function until its scheduled child
+    // returns. Capacity exhaustion resumes the parent with failure so its normal
+    // snapshot and debugger cleanup still runs.
+    Out << "static int " << Prefix << "_RUN(const HTNGeneratedPlannerContext* context, HTNAtom* out_result, HTNGeneratedTaskContinuationFn function)\n{\n";
+    Out << "    " << Prefix << "_EXECUTION_STORAGE* storage = HTN_GENERATED_EXECUTION(context);\n";
+    Out << "    " << Prefix << "_CALL_FRAME* frame = &storage->call_frames[0];\n";
+    Out << "    int result = 0;\n";
+    Out << "    storage->call_frame_count = 1u;\n";
+    Out << "    if (storage->execution_info.peak_call_frames == 0u) storage->execution_info.peak_call_frames = 1u;\n";
+    Out << "    frame->parent = NULL; frame->resume = 0u;\n";
+    Out << "    frame->function = function;\n";
+    Out << "    storage->call_frame = frame;\n";
+    Out << "    while (storage->call_frame) {\n";
+    Out << "        frame = storage->call_frame;\n";
+    Out << "        result = frame->function(context, out_result);\n";
+    Out << "        if (result == 2) {\n";
+    Out << "            " << Prefix << "_CALL_FRAME* child;\n";
+    Out << "            if (storage->call_frame_count == " << inCallFrameCapacity << "u) {\n";
+    Out << "                storage->failure_state = HTN_DECOMPOSITION_CALL_FRAME_CAPACITY_EXCEEDED;\n";
+    Out << "                storage->execution_info.last_error = \"" << EscapeCString(SourceFile)
+        << ": Domain '" << EscapeCString(B.DomainId) << "' exceeded its call-frame capacity (" << inCallFrameCapacity
+        << "). Regenerate the domain with HTNTranslator --call-frame-capacity=<larger value> and recompile the generated code.\";\n";
+    Out << "                frame->child_result = 0; continue;\n";
+    Out << "            }\n";
+    Out << "            child = &storage->call_frames[storage->call_frame_count++];\n";
+    Out << "            if (storage->call_frame_count > storage->execution_info.peak_call_frames) storage->execution_info.peak_call_frames = storage->call_frame_count;\n";
+    Out << "            child->resume = 0u;\n";
+    Out << "            child->parent = frame; child->function = storage->next_function;\n";
+    Out << "            storage->call_frame = child;\n";
+    Out << "        } else {\n";
+    Out << "            storage->call_frame = frame->parent;\n";
+    Out << "            --storage->call_frame_count;\n";
+    Out << "            if (storage->call_frame) storage->call_frame->child_result = result;\n";
+    Out << "        }\n";
+    Out << "    }\n";
+    Out << "    return result;\n}\n\n";
+
     // A continuation executes one already-popped task. Compound continuations
     // only select/decompose their method and queue that method's children. The
     // dispatcher then consumes those children before older sibling snapshots,
@@ -2428,6 +2505,12 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         Out << "static int " << TaskFunctions[T] << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result)\n{\n";
         Out << "    (void)context;\n";
         Out << "    (void)out_result;\n";
+        Out << "    if (HTN_GENERATED_EXECUTION(context)->call_frame->resume) {\n";
+        Out << "        const int task_result = HTN_GENERATED_EXECUTION(context)->call_frame->child_result;\n";
+        Out << "        HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, task_result);\n";
+        Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+        Out << "        return task_result;\n";
+        Out << "    }\n";
         Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
         Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, " << T << "u);\n";
         if (T < B.TaskCallExpressions.size())
@@ -2673,18 +2756,16 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
 
                 for (const uint32 ArgumentIndex : CopiedArguments)
                     Out << "    HTNAtom_Destroy(&compound_argument_copy_" << ArgumentIndex << ");\n";
-                Out << "    { int task_result = " << MethodFunctions[static_cast<size_t>(MethodIndex)] << "(context, out_result);\n";
-                Out << "      HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, task_result);\n";
-                Out << "      HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
-                Out << "      return task_result; }\n";
+                Out << "    HTN_GENERATED_EXECUTION(context)->call_frame->resume = 1u;\n";
+                Out << "    HTN_GENERATED_EXECUTION(context)->next_function = " << MethodFunctions[static_cast<size_t>(MethodIndex)] << ";\n";
+                Out << "    return 2;\n";
             }
         }
         Out << "}\n\n";
     }
 
-    // Methods retain the same condition CFG and queue semantics as the known-good
-    // generated planner. The only changed dispatch mechanism is task-id switch ->
-    // compile-time continuation pointer.
+    // Conditions execute synchronously. Only task invocations suspend, with
+    // branch snapshots and resume labels stored in the explicit call frame.
     for (size_t M = 0; M < B.Methods.size(); ++M)
     {
         const auto& Method = B.Methods[M];
@@ -2716,6 +2797,17 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         Out << "static int " << MethodFunctions[M] << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result)\n{\n";
         Out << "    (void)context;\n";
         Out << "    (void)out_result;\n";
+        std::vector<uint32> ResumeLabels(Method.BranchCount);
+        Out << "    " << Prefix << "_CALL_FRAME* frame = HTN_GENERATED_EXECUTION(context)->call_frame;\n";
+        Out << "    switch (frame->resume) {\n";
+        for (uint32 BI = 0; BI < Method.BranchCount; ++BI)
+        {
+            if (B.Branches[Method.FirstBranch + BI].TaskCount == 0u) continue;
+            ResumeLabels[BI] = W.NewLabel();
+            Out << "    case " << (BI + 1u) << "u: goto " << W.Label(ResumeLabels[BI]) << ";\n";
+        }
+        Out << "    default: break;\n";
+        Out << "    }\n";
         Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
         Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, " << M << "u);\n";
         if (Method.BranchCount == 0u)
@@ -2737,24 +2829,22 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             const uint32 BranchFailure = (BI + 1u < Method.BranchCount) ? BranchLabels[BI + 1u] : MethodFailureLabel;
             const bool CanRetryNextBranch = BI + 1u < Method.BranchCount && Branch.TaskCount != 0u;
             const size_t MethodSnapshotCount = MethodVariableSlots.size();
-            const size_t MethodSnapshotStorageCount = std::max<size_t>(1u, MethodSnapshotCount);
 
             Out << W.Label(BranchLabels[BI]) << ":\n";
             Out << "    ;\n";
             if (CanRetryNextBranch)
             {
-                Out << "    HTNAtom branch_retry_values_" << BIndex << "[" << MethodSnapshotStorageCount << "u];\n";
                 if (MethodSnapshotCount != 0u)
-                    Out << "    uint8_t branch_retry_bound_" << BIndex << "[" << MethodSnapshotStorageCount << "u] = {0};\n";
-                Out << "    const int32_t branch_retry_plan_size_" << BIndex << " = HTNAtom_GetListSize(out_result);\n";
-                Out << "    const uint32_t branch_retry_pending_base_" << BIndex << " = HTN_GENERATED_EXECUTION(context)->total_pending_count;\n";
-                Out << "    const uint64_t branch_retry_frame_" << BIndex << " = HTN_GENERATED_EXECUTION(context)->current_variable_frame_id;\n";
-                Out << "    HTNAtom_InitRange(branch_retry_values_" << BIndex << ", " << MethodSnapshotCount << "u);\n";
+                    Out << "    { uint32_t i; for (i = 0u; i < " << MethodSnapshotCount << "u; ++i) frame->retry_bound[i] = 0u; }\n";
+                Out << "    frame->retry_plan_size = HTNAtom_GetListSize(out_result);\n";
+                Out << "    frame->retry_pending_base = HTN_GENERATED_EXECUTION(context)->total_pending_count;\n";
+                Out << "    frame->retry_frame = HTN_GENERATED_EXECUTION(context)->current_variable_frame_id;\n";
+                Out << "    HTNAtom_InitRange(frame->retry_values, " << MethodSnapshotCount << "u);\n";
                 for (size_t SnapshotIndex = 0u; SnapshotIndex < MethodVariableSlots.size(); ++SnapshotIndex)
                 {
                     const uint32 Slot = MethodVariableSlots[SnapshotIndex];
                     Out << "    { const HTNAtom* branch_retry_value = HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, " << Slot << "u);\n";
-                    Out << "      if (branch_retry_value) { if (!HTNAtom_AssignCopy(&branch_retry_values_" << BIndex << "[" << SnapshotIndex << "u], branch_retry_value)) { HTNAtom_DestroyRange(branch_retry_values_" << BIndex << ", " << MethodSnapshotCount << "u); HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY; HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); return 0; } branch_retry_bound_" << BIndex << "[" << SnapshotIndex << "u] = 1u; } }\n";
+                    Out << "      if (branch_retry_value) { if (!HTNAtom_AssignCopy(&frame->retry_values[" << SnapshotIndex << "u], branch_retry_value)) { HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u); HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY; HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); return 0; } frame->retry_bound[" << SnapshotIndex << "u] = 1u; } }\n";
                 }
             }
             Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
@@ -2767,7 +2857,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             Out << W.Label(BranchFailedDebug) << ":\n";
             Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_CONDITION_CFG);\n";
             if (CanRetryNextBranch)
-                Out << "    HTNAtom_DestroyRange(branch_retry_values_" << BIndex << ", " << MethodSnapshotCount << "u);\n";
+                Out << "    HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u);\n";
             Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_RETRY);\n";
             Out << "    HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
             Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_RETRY);\n";
@@ -2781,7 +2871,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             {
                 Out << "    if (!" << Prefix << "_PUSH_BRANCH_CONTINUATIONS_" << BIndex << "(context)) {\n";
                 if (CanRetryNextBranch)
-                    Out << "        HTNAtom_DestroyRange(branch_retry_values_" << BIndex << ", " << MethodSnapshotCount << "u);\n";
+                    Out << "        HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u);\n";
                 Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_TASK_SCHEDULING);\n";
                 Out << "        HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
                 Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
@@ -2800,29 +2890,36 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             if (Branch.TaskCount != 0u)
             {
                 const std::string PendingBase = CanRetryNextBranch
-                    ? "branch_retry_pending_base_" + std::to_string(BIndex)
+                    ? "frame->retry_pending_base"
                     : "0u";
                 Out << "    while (HTN_GENERATED_EXECUTION(context)->total_pending_count > " << PendingBase << ") {\n";
                 Out << "        HTNGeneratedTaskContinuationFn branch_continuation = " << Prefix << "_POP_PENDING_CONTINUATION(context);\n";
-                Out << "        if (!branch_continuation || !branch_continuation(context, out_result)) {\n";
+                Out << "        if (branch_continuation) {\n";
+                Out << "            frame->resume = " << (BI + 1u) << "u;\n";
+                Out << "            HTN_GENERATED_EXECUTION(context)->next_function = branch_continuation;\n";
+                Out << "            return 2;\n";
+                Out << "        }\n";
+                Out << "        frame->child_result = 0;\n";
+                Out << W.Label(ResumeLabels[BI]) << ":\n";
+                Out << "        if (!frame->child_result) {\n";
                 if (CanRetryNextBranch)
                 {
-                    Out << "            if (HTN_GENERATED_EXECUTION(context)->failure_state != HTN_DECOMPOSITION_NO_PLAN) { HTNAtom_DestroyRange(branch_retry_values_" << BIndex << ", " << MethodSnapshotCount << "u); HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH); HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); return 0; }\n";
+                    Out << "            if (HTN_GENERATED_EXECUTION(context)->failure_state != HTN_DECOMPOSITION_NO_PLAN) { HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u); HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH); HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); return 0; }\n";
                     if (inRuntimeBacktrackingSupport == HTNGeneratedRuntimeBacktrackingSupport::Enabled)
-                        Out << "            if ((context->backtracking_mode & HTN_BACKTRACKING_BRANCHES) == 0) { HTNAtom_DestroyRange(branch_retry_values_" << BIndex << ", " << MethodSnapshotCount << "u); HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH); HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); return 0; }\n";
-                    Out << "            while (HTN_GENERATED_EXECUTION(context)->total_pending_count > branch_retry_pending_base_" << BIndex << ") (void)" << Prefix << "_POP_PENDING_CONTINUATION(context);\n";
-                    Out << "            while (HTNAtom_GetListSize(out_result) > branch_retry_plan_size_" << BIndex << ") (void)HTNAtomList_RemoveAt(&out_result->value.list_value, (uint32_t)(HTNAtom_GetListSize(out_result) - 1));\n";
+                        Out << "            if ((context->backtracking_mode & HTN_BACKTRACKING_BRANCHES) == 0) { HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u); HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH); HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); return 0; }\n";
+                    Out << "            while (HTN_GENERATED_EXECUTION(context)->total_pending_count > frame->retry_pending_base) (void)" << Prefix << "_POP_PENDING_CONTINUATION(context);\n";
+                    Out << "            while (HTNAtom_GetListSize(out_result) > frame->retry_plan_size) (void)HTNAtomList_RemoveAt(&out_result->value.list_value, (uint32_t)(HTNAtom_GetListSize(out_result) - 1));\n";
                     for (size_t SnapshotIndex = 0u; SnapshotIndex < MethodVariableSlots.size(); ++SnapshotIndex)
                     {
                         const uint32 Slot = MethodVariableSlots[SnapshotIndex];
-                        Out << "            if (branch_retry_bound_" << BIndex << "[" << SnapshotIndex << "u]) {\n";
-                        EmitGeneratedVariableSetMove(W, std::to_string(Slot) + "u", "&branch_retry_values_" + std::to_string(BIndex) + "[" + std::to_string(SnapshotIndex) + "u]", "                ");
+                        Out << "            if (frame->retry_bound[" << SnapshotIndex << "u]) {\n";
+                        EmitGeneratedVariableSetMove(W, std::to_string(Slot) + "u", "&frame->retry_values[" + std::to_string(SnapshotIndex) + "u]", "                ");
                         Out << "            } else {\n";
                         EmitGeneratedVariableUnbind(W, std::to_string(Slot) + "u", "                ");
                         Out << "            }\n";
                     }
-                    Out << "            HTN_GENERATED_EXECUTION(context)->current_variable_frame_id = branch_retry_frame_" << BIndex << ";\n";
-                    Out << "            HTNAtom_DestroyRange(branch_retry_values_" << BIndex << ", " << MethodSnapshotCount << "u);\n";
+                    Out << "            HTN_GENERATED_EXECUTION(context)->current_variable_frame_id = frame->retry_frame;\n";
+                    Out << "            HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u);\n";
                     Out << "            HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
                     Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
                     Out << "            goto " << W.Label(BranchFailure) << ";\n";
@@ -2840,7 +2937,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             }
 
             if (CanRetryNextBranch)
-                Out << "    HTNAtom_DestroyRange(branch_retry_values_" << BIndex << ", " << MethodSnapshotCount << "u);\n";
+                Out << "    HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u);\n";
             Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_COMMIT);\n";
             Out << "    HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 1);\n";
             Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_COMMIT);\n";
@@ -2873,6 +2970,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "    (void)out_result;\n";
     Out << "    (void)require_top_level;\n";
     Out << "    if (!context || !context->execution_storage || !context->prepared_storage) return HTN_DECOMPOSITION_INVALID_CONTEXT;\n";
+    Out << "    HTN_GENERATED_EXECUTION(context)->execution_info.peak_call_frames = 0u;\n";
+    Out << "    HTN_GENERATED_EXECUTION(context)->execution_info.last_error = NULL;\n";
     Out << "    if (!context->world_state || !context->callterm_binding_context) return HTN_DECOMPOSITION_INVALID_CONTEXT;\n";
     Out << "    if (!call || HTNAtom_GetType(call) != HTN_ATOM_TYPE_LIST || HTNAtom_GetListSize(call) < 1) return HTN_DECOMPOSITION_INVALID_CALL;\n";
     Out << "    call_head = HTNAtom_GetListElement(call, 0u);\n";
@@ -2954,7 +3053,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             EmitGeneratedVariableSetCopy(W, std::to_string(Target.VariableSlot) + "u", "entry_argument", "          ");
             Out << "          if (!HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, " << Target.VariableSlot << "u)) { HTNAtom_SetEmptyList(out_result); return HTN_DECOMPOSITION_OUT_OF_MEMORY; } }\n";
         }
-        Out << "        result = " << MethodFunctions[M] << "(context, out_result); break;\n";
+        Out << "        result = " << Prefix << "_RUN(context, out_result, " << MethodFunctions[M] << "); break;\n";
     }
     Out << "    default: result = 0; break;\n";
     Out << "    }\n";
@@ -3019,7 +3118,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
     Out << "        }\n";
     Out << "        if (!pending_continuation) break;\n";
-    Out << "        if (!pending_continuation(context, out_result)) {\n";
+    Out << "        if (!" << Prefix << "_RUN(context, out_result, pending_continuation)) {\n";
     Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_DISPATCH);\n";
     Out << "            HTN_GENERATED_EVENT_DEBUG_END_PLAN(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
     Out << "            HTNAtom_SetEmptyList(out_result);\n";
@@ -3082,6 +3181,7 @@ bool HTNCCodeGenerator::Generate(const HTNCompilerAST::Domain& inDomain,
         outError="Unknown runtime backtracking support mode";
         return false;
     }
+    if(inOptions.CallFrameCapacity == 0u){outError="Call frame capacity must be greater than zero";return false;}
     if(inOptions.BacktrackingCapacity == 0u){outError="Backtracking capacity must be greater than zero";return false;}
     const auto IsStart=[](unsigned char C){return std::isalpha(C)||C=='_';}; const auto IsChar=[](unsigned char C){return std::isalnum(C)||C=='_';};
     if(!IsStart(static_cast<unsigned char>(inOptions.EntryPointName.front()))){outError="Entry point must be a valid C identifier: "+inOptions.EntryPointName;return false;}
@@ -3106,7 +3206,7 @@ bool HTNCCodeGenerator::Generate(const HTNCompilerAST::Domain& inDomain,
     const std::string SourceFile=inOptions.SourceFilePath.empty()?"<domain>":inOptions.SourceFilePath;
     const std::string GeneratedSource = MakeSource(IR,Prefix,inOptions.EntryPointName,SourceFile,inOptions.LinkedSourceFiles,
                                                    inOptions.BacktrackingPolicy,inOptions.RuntimeBacktrackingSupport,
-                                                   inOptions.BacktrackingCapacity);
+                                                   inOptions.BacktrackingCapacity, inOptions.CallFrameCapacity);
     if (IR.HasError())
     {
         outError = IR.GetError();

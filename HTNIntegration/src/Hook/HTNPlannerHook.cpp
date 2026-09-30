@@ -35,8 +35,8 @@ HTNDecompositionStatus ExecuteGeneratedPlanner(const HTNGeneratedPlannerDefiniti
     HTNGeneratedPlannerContext GeneratedContext{};
     GeneratedContext.world_state = ExecutionContext.WorldState;
     GeneratedContext.client_context = ExecutionContext.ClientContext;
-    GeneratedContext.missing_callterm_policy = ExecutionContext.MissingCallTermPolicy;
-    GeneratedContext.missing_callterm_callback = ExecutionContext.MissingCallTermCallback;
+    GeneratedContext.callterm_error_policy = ExecutionContext.CallTermErrorPolicy;
+    GeneratedContext.callterm_error_callback = ExecutionContext.CallTermErrorCallback;
     GeneratedContext.callterm_binding_context = ExecutionContext.CallTermBindingContext;
     GeneratedContext.backtracking_mode = ExecutionContext.BacktrackingMode;
 #ifdef HTN_DEBUG_DECOMPOSITION
@@ -58,6 +58,14 @@ HTNDecompositionStatus ExecuteGeneratedPlanner(const HTNGeneratedPlannerDefiniti
         &Output);
     if (Result == HTN_DECOMPOSITION_SUCCEEDED)
         outPlan = HTNAtomOwner(std::move(Output));
+    else if (Result == HTN_DECOMPOSITION_CALL_FRAME_CAPACITY_EXCEEDED)
+    {
+        const auto* Info = inDefinition.get_execution_info(GeneratedContext.execution_storage);
+        if (Info && Info->last_error)
+        {
+            HTN_LOG_ERROR("{}", Info->last_error);
+        }
+    }
 
     HTNAtom::sDestroy(Output);
     return Result;

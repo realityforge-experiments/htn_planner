@@ -120,7 +120,7 @@ Copy-PackageFile "$PSScriptRoot/ValidatePackage.cmd" 'ValidatePackage.cmd'
 Copy-PackageFile "$PSScriptRoot/ValidatePackage.ps1" 'ValidatePackage.ps1'
 Copy-PackageFile "$RepositoryRoot/build/sdk/build-receipt.json" 'build-provenance.json'
 Copy-PackageFile "$RepositoryRoot/docs/SDK_VARIANTS.md" 'docs/SDK_VARIANTS.md'
-foreach ($document in @('RELEASE_2_0_0.md', 'RELEASE_NOTES_WRITE_FACT.md', 'USE_CASES.md', 'TYPE_CONVERSION.md', 'MISSING_CALLTERMS.md', 'METHOD_OVERLOADS.md', 'AXIOM_OVERLOADS.md', 'AAA_COMBAT_NPC_DEMO.md', 'ASSIGNMENT.md', 'RELEASE_2_0_3.md', 'RELEASE_NOTES_NESTED_CALLS.md')) {
+foreach ($document in @('RELEASE_2_0_0.md', 'RELEASE_NOTES_WRITE_FACT.md', 'USE_CASES.md', 'TYPE_CONVERSION.md', 'MISSING_CALLTERMS.md', 'METHOD_OVERLOADS.md', 'AXIOM_OVERLOADS.md', 'AAA_COMBAT_NPC_DEMO.md', 'ASSIGNMENT.md', 'RELEASE_2_0_3.md', 'RELEASE_NOTES_NESTED_CALLS.md', 'RELEASE_NOTES_AXIOM_ASSIGNMENTS.md', 'RELEASE_2_0_4.md', 'GENERATED_RECURSION.md')) {
     Copy-PackageFile "$RepositoryRoot/docs/$document" "docs/$document"
 }
 Copy-PackageFile "$RepositoryRoot/docs/RELEASE_2_0_2.md" 'docs/RELEASE_2_0_2.md'

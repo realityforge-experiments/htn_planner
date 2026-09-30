@@ -42,12 +42,25 @@ public:
     // Borrowed execution context, populated by the registry for each invocation.
     void* GetClientContext() const { return mClientContext; }
 
+    // Record the first failure; the registry reports it once after the binding returns.
+    void SetError(HTNCallTermErrorReason inReason, uint32_t inIndex = UINT32_MAX,
+                  uint32_t inExpectedType = UINT32_MAX, const char* inExpectedName = nullptr) const
+    {
+        if (!mError || mError->Reason != HTNCallTermErrorReason::None) return;
+        mError->Reason = inReason;
+        mError->ArgumentIndex = inIndex;
+        mError->ExpectedAtomType = inExpectedType;
+        mError->ExpectedTypeName = inExpectedName;
+        if (inIndex < mSize) mError->ActualAtomType = static_cast<uint32_t>(HTNAtomGetType((*this)[inIndex]));
+    }
+
     size_t size() const { return mSize; }
     bool empty() const { return mSize == 0u; }
 
 private:
     friend class HTNCallTermRegistry;
     void* mClientContext = nullptr;
+    HTNCallTermErrorInfo* mError = nullptr;
     const HTNAtomOwner* mOwners = nullptr;
     const HTNAtom* const* mAtoms = nullptr;
     size_t mSize = 0u;
@@ -129,7 +142,7 @@ public:
     // Checks all call sites without executing them. Callback data is borrowed.
     // False also indicates an invalid definition or a context from another registry.
     HTN_NODISCARD bool ValidateGeneratedCallTerms(const HTNGeneratedPlannerDefinition& inDefinition,
-        const HTNCallTermBindingContext& inContext, HTNMissingCallTermCallback inCallback = nullptr,
+        const HTNCallTermBindingContext& inContext, HTNCallTermErrorCallback inCallback = nullptr,
         void* inClientContext = nullptr) const;
 
     HTN_NODISCARD bool IsBound(const std::string& inID) const;
@@ -149,14 +162,14 @@ private:
         std::string DaemonID;
     };
 
-    static std::optional<HTNMissingCallTermReason> CheckEntry(const Entry* inEntry,
+    static std::optional<HTNCallTermErrorReason> CheckEntry(const Entry* inEntry,
         const HTNCallTermBindingContext* inContext, void*& outDaemon);
 
     static HTNAtomOwner InvokeEntry(const Entry* inEntry, const char* inName,
                                     const HTNCallTermBindingContext* inContext,
                                     const HTNCallTermArguments& inArguments,
                                     const HTNCallTermSource* inSource, void* inClientContext,
-                                    HTNMissingCallTermPolicy inPolicy, HTNMissingCallTermCallback inCallback);
+                                    HTNCallTermErrorPolicy inPolicy, HTNCallTermErrorCallback inCallback);
 
     friend int HTNCallTermRegistry_InvokeGeneratedCallTermWithSource(
         const HTNGeneratedPlannerContext*, const HTNGeneratedCallTerm*, const HTNAtom* const*,

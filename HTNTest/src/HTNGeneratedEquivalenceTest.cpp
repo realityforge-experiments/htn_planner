@@ -1,7 +1,9 @@
 // Copyright (c) 2023 Jose Antonio Escribano joseantonioescribanoayllon@gmail.com
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -451,7 +453,7 @@ HTNDecompositionStatus RunGeneratedPlannerWithStorage(const HTNGeneratedPlannerD
     HTNGeneratedPlannerContext Context{};
     Context.world_state = &ioWorldState;
     Context.callterm_binding_context = &inCallTermBindingContext;
-    Context.missing_callterm_policy = HTNMissingCallTermPolicy::FailSilently;
+    Context.callterm_error_policy = HTNCallTermErrorPolicy::FailSilently;
     Context.backtracking_mode = HTN_BACKTRACKING_ALL;
     Context.execution_storage = inExecutionStorage;
     Context.prepared_storage = inPreparedStorage;
@@ -471,7 +473,8 @@ HTNDecompositionStatus RunGeneratedPlanner(const HTNGeneratedPlannerDefinition& 
                          HTNWorldState& ioWorldState,
                          const HTNCallTermBindingContext& inCallTermBindingContext,
                          const std::string& inTopLevelMethod,
-                         HTNAtomOwner& outResult)
+                         HTNAtomOwner& outResult,
+                         HTNGeneratedExecutionInfo* outExecutionInfo = nullptr)
 {
     const HTNGeneratedPlannerDefinition* Domain = &inRegistration;
 
@@ -499,6 +502,9 @@ HTNDecompositionStatus RunGeneratedPlanner(const HTNGeneratedPlannerDefinition& 
         PreparedStorage,
         ExecutionStorage,
         outResult);
+
+    if (outExecutionInfo)
+        *outExecutionInfo = *Domain->get_execution_info(ExecutionStorage);
 
     Domain->destroy_execution_storage(ExecutionStorage);
     ::operator delete(ExecutionStorage);
@@ -1361,7 +1367,7 @@ TEST(HTNGeneratedCallTermTest, PreparedSlotKeepsDirectRegistryEntryAcrossRegistr
 
     HTNGeneratedPlannerContext Execution{};
     Execution.callterm_binding_context = &BindingContext;
-    Execution.missing_callterm_policy = HTNMissingCallTermPolicy::FailSilently;
+    Execution.callterm_error_policy = HTNCallTermErrorPolicy::FailSilently;
     HTNAtom Result;
     HTNAtom_Init(&Result);
     EXPECT_TRUE(HTNCallTermRegistry_InvokeGeneratedCallTerm(
@@ -1455,7 +1461,7 @@ TEST(HTNGeneratedCallTermTest, MissingDaemonFailsOnInvocationAndCanRecover)
     HTNPlannerHook PlannerHook(WorldState, Registry);
     HTNGeneratedPlannerContext Execution{};
     Execution.callterm_binding_context = &PlannerHook.GetCallTermBindingContext();
-    Execution.missing_callterm_policy = HTNMissingCallTermPolicy::FailSilently;
+    Execution.callterm_error_policy = HTNCallTermErrorPolicy::FailSilently;
 
     const HTNGeneratedCallTerm Slot = HTNCallTermRegistry_ResolveGeneratedCallTerm(
         &PlannerHook.GetCallTermBindingContext(), "read_entity_value");
@@ -1933,7 +1939,9 @@ TEST(HTNGeneratedArithmeticArgumentTest, HandlesAxiomOutputIoMismatchAndInvalidA
         EXPECT_EQ(std::vector<std::string>{inExpectedStep}, FormatPlan(Output));
     };
 
-    ExpectPlan("axiom_output_expression", "!axiom_output_expression \"success\"");
+    HTNAtomOwner RejectedOutput;
+    EXPECT_EQ(HTN_DECOMPOSITION_NO_PLAN, RunGeneratedPlanner(*Definition, Database.GetWorldState(),
+        PlannerHook.GetCallTermBindingContext(), "axiom_output_expression", RejectedOutput));
     ExpectPlan("axiom_output_mismatch", "!axiom_output_mismatch \"controlled_failure\"");
     ExpectPlan("axiom_io_mismatch", "!axiom_io_mismatch \"controlled_failure\"");
     ExpectPlan("axiom_invalid_input_expression", "!axiom_invalid_input_expression \"controlled_failure\"");
@@ -2814,6 +2822,60 @@ TEST(HTNAxiomOverloadTest, PreservesInputOutputIoAndBacktrackingAcrossOverloads)
 
 extern "C" const HTNGeneratedPlannerDefinition* CreateNestedAxiomChoicesHTN_GetDefinition(void);
 
+extern "C" const HTNGeneratedPlannerDefinition* CreateAxiomAssignmentsHTN_GetDefinition(void);
+
+TEST(HTNGeneratedAxiomTest, AssignmentsInitializeParameterSlotsAndRestoreOutputs)
+{
+    HTNAtomLifetimeBalanceScope Lifetime;
+    HTNDatabaseHook Database;
+    HTNCallTermRegistry Registry;
+    int Calls = 0;
+    Registry.Bind("get_entity_position", [&](const HTNCallTermArguments& Arguments) -> int32 {
+        ++Calls;
+        EXPECT_EQ(HTNAtomGetValue<int32>(Arguments[0]), 1);
+        return 7;
+    });
+    auto& World = Database.GetWorldState();
+    World.AddFact("entity", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{1})});
+    World.AddFact("candidate", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{1})});
+    World.AddFact("candidate", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{2})});
+    HTNPlannerHook GeneratedHook(World, Registry);
+    ASSERT_TRUE(GeneratedHook.SetGeneratedPlannerDefinition(CreateAxiomAssignmentsHTN_GetDefinition()));
+    HTNPlanningUnit Generated(Database, GeneratedHook, "regression");
+    Generated.GetExecutionContext().CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
+#ifdef HTN_DEBUG_DECOMPOSITION
+    HTNGeneratedDebugger Debugger;
+    Debugger.SetEnabled(true);
+    Generated.SetGeneratedDebugger(&Debugger);
+#endif
+    struct Case { const char* Entry; int Value; int Calls; };
+    for (int Repeat = 0; Repeat < 2; ++Repeat)
+        for (const auto& Test : {
+            Case{"regression", 7, 1}, Case{"literal", 7, 0}, Case{"arithmetic", 7, 0},
+            Case{"solutions", 2, 0}, Case{"restore_alternative", 2, 0}, Case{"restore_caller", 7, 0},
+            Case{"bound_output", 7, 0}, Case{"literal_output", 7, 0}, Case{"arithmetic_output", 7, 0},
+            Case{"io_unbound", 7, 1}, Case{"io_bound", 7, 0}, Case{"io_nested_bound", 7, 0},
+            Case{"io_nested_unbound", 7, 1}, Case{"nested_forwarding", 7, 0},
+            Case{"io_restore_caller", 7, 2}, Case{"io_solutions", 2, 0},
+            Case{"io_restore_alternative", 2, 0}, Case{"io_alt_retry", 2, 0},
+            Case{"io_exhausted", 7, 1}, Case{"io_bound_different", 9, 0},
+            Case{"io_nested_bound_different", 9, 0}, Case{"io_literal", 7, 0},
+            Case{"io_literal_bound", 9, 0}, Case{"io_arithmetic_bound", 9, 0}})
+        {
+            SCOPED_TRACE(Test.Entry);
+            Calls = 0;
+            const auto* Entry = HtnSymbol::sGetSymbol(Test.Entry);
+            ASSERT_EQ(Generated.DecomposeTopLevelMethod(Entry), HTN_DECOMPOSITION_SUCCEEDED);
+            EXPECT_EQ(Calls, Test.Calls);
+            EXPECT_EQ(FormatPlan(Generated.GetLastDecomposition().GetResult()),
+                      std::vector<std::string>{"!result " + std::to_string(Test.Value)});
+#ifdef HTN_DEBUG_DECOMPOSITION
+            for (const auto& Node : Debugger.GetNodes())
+                if (Node.Started) EXPECT_TRUE(Node.Completed) << Node.DisplayName;
+#endif
+        }
+}
+
 TEST(HTNGeneratedAxiomTest, NestedChoicesPreserveBindingsAndBacktrack)
 {
     HTNAtomLifetimeBalanceScope AtomLifetimeBalance;
@@ -2842,9 +2904,9 @@ TEST(HTNGeneratedAxiomTest, NestedChoicesPreserveBindingsAndBacktrack)
     struct Case { const char* Entry; const char* Expected; };
     const Case Cases[] = {
         {"out_backtrack", "!selected 2"},
-        {"out_literal", "!selected 2"},
-        {"out_arithmetic", "!selected 2"},
-        {"out_bound", "!selected 2"},
+        {"out_literal", nullptr},
+        {"out_arithmetic", nullptr},
+        {"out_bound", nullptr},
         {"out_mismatch", "!fallback"},
         {"out_owned_literal", "!selected 2"},
         {"alt_preserves_bound", "!selected 1"},
@@ -2869,6 +2931,11 @@ TEST(HTNGeneratedAxiomTest, NestedChoicesPreserveBindingsAndBacktrack)
     const auto Check = [&](const char* inEntry, const char* inExpected) {
         SCOPED_TRACE(inEntry);
         const auto* Entry = HtnSymbol::sGetSymbol(inEntry);
+        if (!inExpected)
+        {
+            EXPECT_EQ(Generated.DecomposeTopLevelMethod(Entry), HTN_DECOMPOSITION_NO_PLAN);
+            return;
+        }
         ASSERT_EQ(Generated.DecomposeTopLevelMethod(Entry), HTN_DECOMPOSITION_SUCCEEDED);
 #ifdef HTN_DEBUG_DECOMPOSITION
         for (const auto& Node : Debugger.GetNodes())
@@ -2889,7 +2956,7 @@ TEST(HTNGeneratedAxiomTest, NestedChoicesPreserveBindingsAndBacktrack)
             EXPECT_EQ(Generated.DecomposeTopLevelMethod(Entry), HTN_DECOMPOSITION_NO_PLAN);
         }
         Generated.GetExecutionContext().BacktrackingMode = HTN_BACKTRACKING_ALL;
-        Check("out_literal", "!selected 2");
+        Check("out_literal", nullptr);
     }
     WorldState.RemoveFact("candidate", 1u, 0u);
     WorldState.RemoveFact("candidate", 1u, 0u);
@@ -2919,7 +2986,7 @@ TEST(HTNGeneratedAxiomTest, BacktrackingResumesWithoutReplayingHostEffects)
     HTNPlannerHook GeneratedHook(WorldState, Registry);
     ASSERT_TRUE(GeneratedHook.SetGeneratedPlannerDefinition(CreateNestedAxiomChoicesHTN_GetDefinition()));
     HTNPlanningUnit Generated(Database, GeneratedHook, "effects");
-    Generated.GetExecutionContext().MissingCallTermPolicy = HTNMissingCallTermPolicy::FailSilently;
+    Generated.GetExecutionContext().CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
     struct Case
     {
         const char* Entry;
@@ -2943,5 +3010,228 @@ TEST(HTNGeneratedAxiomTest, BacktrackingResumesWithoutReplayingHostEffects)
         EXPECT_EQ(Trace, Test.Trace);
         const auto GeneratedPlan = Generated.GetLastDecomposition().GetResult();
         EXPECT_EQ(FormatPlan(GeneratedPlan), (std::vector<std::string>{Test.Plan}));
+    }
+}
+
+namespace
+{
+// Runs in a child process: a native stack overflow must not kill the test runner.
+void CheckGeneratedRecursiveEntityCount(int32 inEntityCount)
+{
+    HTNDatabaseHook Database;
+    ASSERT_TRUE(Database.ParseWorldStateFile(MakeTestFilePath(
+        HTNFileHelpers::kWorldStatesDirectoryName, "complex_scenario_recursive_100",
+        HTNFileHelpers::kWorldStateFileExtension)));
+    HTNCallTermRegistry Registry;
+    BindTestCallTerms(Registry);
+    int Increments = 0;
+    Registry.Bind("inc", [&](const HTNCallTermArguments& Arguments) -> int32 {
+        ++Increments;
+        return HTNAtomGetValue<int32>(Arguments[0]) + 1;
+    });
+    HTNCallTermBindingContext Bindings(Registry);
+    const auto* Definition = CreateComplexScenarioHTN_GetDefinition();
+    std::vector<std::string> Baseline;
+    ASSERT_EQ(RunGeneratedPlanner(*Definition, Database.GetWorldState(), Bindings,
+        "run_scenario", Baseline), HTN_DECOMPOSITION_SUCCEEDED);
+    ASSERT_EQ(Increments, 100);
+    ASSERT_FALSE(Baseline.empty());
+
+    auto& World = Database.GetWorldState();
+    World.RemoveFact("entity_count", 1u, 0u);
+    World.AddFact("entity_count", std::vector<HTNAtomOwner>{HTNAtomOwner(inEntityCount)});
+    for (int32 Index = 100; Index < inEntityCount; ++Index)
+    {
+        const int32 Entity = 100000 + Index;
+        World.AddFact("entity", std::vector<HTNAtomOwner>{HTNAtomOwner(Index), HTNAtomOwner(Entity)});
+        World.AddFact("health_value", std::vector<HTNAtomOwner>{HTNAtomOwner(Entity), HTNAtomOwner(int32{50})});
+        World.AddFact("speed_value", std::vector<HTNAtomOwner>{HTNAtomOwner(Entity), HTNAtomOwner(1.0f)});
+    }
+    std::vector<std::string> Expected = Baseline;
+    for (int32 Index = 100; Index < inEntityCount; ++Index)
+        Expected.emplace_back("!log \"Idle - no special action\"");
+    // Reuse the same world and registry to catch leaked state after deep recursion.
+    uint32_t PreviousPeak = 0u;
+    for (int Attempt = 0; Attempt < 2; ++Attempt)
+    {
+        Increments = 0;
+        HTNAtomOwner Plan;
+        HTNGeneratedExecutionInfo Info{};
+        ASSERT_EQ(RunGeneratedPlanner(*Definition, World, Bindings, "run_scenario", Plan, &Info),
+            HTN_DECOMPOSITION_SUCCEEDED);
+        EXPECT_EQ(Increments, inEntityCount);
+        EXPECT_EQ(FormatPlan(Plan), Expected);
+        EXPECT_GT(Info.peak_call_frames, 0u);
+        EXPECT_LE(Info.peak_call_frames, Info.call_frame_capacity);
+        EXPECT_EQ(Info.last_error, nullptr);
+        if (Attempt != 0) EXPECT_EQ(Info.peak_call_frames, PreviousPeak);
+        PreviousPeak = Info.peak_call_frames;
+        std::printf("Entities=%d attempt=%d peak_frames=%u capacity=%u frame_bytes=%zu execution_bytes=%zu\n",
+            inEntityCount, Attempt + 1, Info.peak_call_frames, Info.call_frame_capacity,
+            Info.call_frame_size, Definition->execution_storage_size);
+        std::fflush(stdout);
+    }
+}
+}
+
+class HTNGeneratedRecursionStressTest : public testing::TestWithParam<int32> {};
+
+TEST_P(HTNGeneratedRecursionStressTest, ProcessesEveryEntityWithoutNativeStackOverflow)
+{
+#if GTEST_HAS_DEATH_TEST
+    const int32 EntityCount = GetParam();
+    ASSERT_EXIT({
+        std::fprintf(stderr, "Generated recursion stress: %d entities\n", EntityCount);
+        CheckGeneratedRecursiveEntityCount(EntityCount);
+        std::exit(testing::Test::HasFailure() ? 1 : 0);
+    }, testing::ExitedWithCode(0), "Generated recursion stress");
+#else
+    FAIL() << "Process isolation is required for this native stack stress test";
+#endif
+}
+
+INSTANTIATE_TEST_CASE_P(ComplexScenario, HTNGeneratedRecursionStressTest, testing::Values(100, 1000));
+
+extern "C" const HTNGeneratedPlannerDefinition* CreateRecursionDispatchHTN_GetDefinition(void);
+
+TEST(HTNGeneratedRecursionTest, NonTailAndMutualRecursionPreservePendingArguments)
+{
+    HTNWorldState World;
+    World.AddFact("depth", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{1000})});
+    HTNCallTermRegistry Registry;
+    HTNCallTermBindingContext Bindings(Registry);
+    const auto* Definition = CreateRecursionDispatchHTN_GetDefinition();
+    for (const char* Entry : {"non_tail", "mutual"})
+    {
+        SCOPED_TRACE(Entry);
+        std::vector<std::string> Expected;
+        if (std::string_view(Entry) == "non_tail")
+            for (int Index = 1000; Index > 0; --Index)
+                Expected.push_back("!before " + std::to_string(Index));
+        Expected.push_back("!leaf");
+        for (int Index = 1; Index <= 1000; ++Index)
+        {
+            const char* Head = std::string_view(Entry) == "non_tail" ? "!after " : (Index % 2 ? "!odd " : "!even ");
+            Expected.push_back(Head + std::to_string(Index));
+        }
+        for (int Attempt = 0; Attempt < 2; ++Attempt)
+        {
+            std::vector<std::string> Plan;
+            ASSERT_EQ(RunGeneratedPlanner(*Definition, World, Bindings, Entry, Plan), HTN_DECOMPOSITION_SUCCEEDED);
+            EXPECT_EQ(Plan, Expected);
+        }
+    }
+}
+
+TEST(HTNGeneratedRecursionTest, DeepFailureRestoresPlanWithoutReplayingCallTerms)
+{
+    HTNWorldState World;
+    World.AddFact("depth", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{1000})});
+    HTNCallTermRegistry Registry;
+    int Visits = 0;
+    uintptr_t MinStackAddress = std::numeric_limits<uintptr_t>::max();
+    uintptr_t MaxStackAddress = 0u;
+    Registry.Bind("visit", [&](const HTNCallTermArguments&) {
+        const int StackMarker = Visits++;
+        const uintptr_t Address = reinterpret_cast<uintptr_t>(&StackMarker);
+        MinStackAddress = std::min(MinStackAddress, Address);
+        MaxStackAddress = std::max(MaxStackAddress, Address);
+        return true;
+    });
+    HTNCallTermBindingContext Bindings(Registry);
+    const auto* Definition = CreateRecursionDispatchHTN_GetDefinition();
+    for (int Attempt = 0; Attempt < 2; ++Attempt)
+    {
+        Visits = 0;
+        std::vector<std::string> Plan;
+        ASSERT_EQ(RunGeneratedPlanner(*Definition, World, Bindings, "deep_failure", Plan), HTN_DECOMPOSITION_SUCCEEDED);
+        EXPECT_EQ(Visits, 1001);
+        EXPECT_LT(MaxStackAddress - MinStackAddress, uintptr_t{16384});
+        EXPECT_EQ(Plan, (std::vector<std::string>{"!fallback \"retained string\""}));
+    }
+}
+
+TEST(HTNGeneratedRecursionTest, CapacityFailureLeavesStorageReusable)
+{
+    HTNDatabaseHook Database;
+    auto& World = Database.GetWorldState();
+    World.AddFact("depth", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{5000})});
+    HTNPlannerHook Hook(World);
+    ASSERT_TRUE(Hook.SetGeneratedPlannerDefinition(CreateRecursionDispatchHTN_GetDefinition()));
+    HTNPlanningUnit Unit(Database, Hook, "non_tail");
+    Unit.GetExecutionContext().CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
+    EXPECT_EQ(Unit.DecomposeTopLevelMethod(), HTN_DECOMPOSITION_CALL_FRAME_CAPACITY_EXCEEDED);
+    EXPECT_TRUE(FormatPlan(Unit.GetLastDecomposition().GetResult()).empty());
+
+    World.RemoveFact("depth", 1u, 0u);
+    World.AddFact("depth", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{2})});
+    ASSERT_EQ(Unit.DecomposeTopLevelMethod(), HTN_DECOMPOSITION_SUCCEEDED);
+    EXPECT_EQ(FormatPlan(Unit.GetLastDecomposition().GetResult()),
+              (std::vector<std::string>{"!before 2", "!before 1", "!leaf", "!after 1", "!after 2"}));
+}
+
+TEST(HTNGeneratedRecursionTest, CoreReportsCapacityAndResetsDiagnosticsOnReuse)
+{
+    const auto* Definition = CreateRecursionDispatchHTN_GetDefinition();
+    ASSERT_EQ(Definition->get_execution_info(nullptr), nullptr);
+    auto DestroyPrepared = [=](void* Storage) {
+        if (Storage) Definition->destroy_prepared_storage(Storage);
+        ::operator delete(Storage);
+    };
+    auto DestroyExecution = [=](void* Storage) {
+        if (Storage) Definition->destroy_execution_storage(Storage);
+        ::operator delete(Storage);
+    };
+    // Storage becomes owned only after its generated initialization succeeds.
+    void* RawPrepared = ::operator new(Definition->prepared_storage_size, std::nothrow);
+    ASSERT_NE(RawPrepared, nullptr);
+    if (!Definition->initialize_prepared_storage(RawPrepared))
+    {
+        ::operator delete(RawPrepared);
+        FAIL() << "Could not initialize prepared storage";
+    }
+    std::unique_ptr<void, decltype(DestroyPrepared)> Prepared(RawPrepared, DestroyPrepared);
+    void* RawExecution = ::operator new(Definition->execution_storage_size, std::nothrow);
+    ASSERT_NE(RawExecution, nullptr);
+    if (!Definition->initialize_execution_storage(RawExecution))
+    {
+        ::operator delete(RawExecution);
+        FAIL() << "Could not initialize execution storage";
+    }
+    std::unique_ptr<void, decltype(DestroyExecution)> Execution(RawExecution, DestroyExecution);
+    const auto* Info = Definition->get_execution_info(Execution.get());
+    ASSERT_NE(Info, nullptr);
+    EXPECT_EQ(Info->peak_call_frames, 0u);
+    EXPECT_EQ(Info->last_error, nullptr);
+    HTNWorldState World;
+    HTNCallTermRegistry Registry;
+    HTNCallTermBindingContext Bindings(Registry);
+    for (const int32 Depth : {5000, 2, 5000, 0})
+    {
+        SCOPED_TRACE(Depth);
+        World.AddFact("depth", std::vector<HTNAtomOwner>{HTNAtomOwner(Depth)});
+        HTNAtomOwner Plan;
+        const auto Status = RunGeneratedPlannerWithStorage(*Definition, World, Bindings,
+            "non_tail", Prepared.get(), Execution.get(), Plan);
+        if (Depth == 5000)
+        {
+            EXPECT_EQ(Status, HTN_DECOMPOSITION_CALL_FRAME_CAPACITY_EXCEEDED);
+            EXPECT_EQ(Info->peak_call_frames, Info->call_frame_capacity);
+            EXPECT_TRUE(FormatPlan(Plan).empty());
+            ASSERT_NE(Info->last_error, nullptr);
+            const std::string Error(Info->last_error);
+            EXPECT_NE(Error.find("recursion_dispatch.domain"), std::string::npos);
+            EXPECT_NE(Error.find("Domain 'recursion_dispatch'"), std::string::npos);
+            EXPECT_NE(Error.find(std::to_string(Info->call_frame_capacity)), std::string::npos);
+            EXPECT_NE(Error.find("--call-frame-capacity=<larger value>"), std::string::npos);
+            EXPECT_NE(Error.find("recompile"), std::string::npos);
+        }
+        else
+        {
+            EXPECT_EQ(Status, HTN_DECOMPOSITION_SUCCEEDED);
+            EXPECT_LT(Info->peak_call_frames, 16u);
+            EXPECT_EQ(Info->last_error, nullptr);
+        }
+        World.RemoveFact("depth", 1u, 0u);
     }
 }

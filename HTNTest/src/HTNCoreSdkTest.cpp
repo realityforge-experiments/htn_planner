@@ -30,6 +30,9 @@ TEST(HTNCoreSdkTest, ValidatesDefinitionsWithoutHooks)
     Invalid.decompose_call = nullptr;
     EXPECT_EQ(HTNGeneratedPlanner_ValidateDefinition(&Invalid), 0);
     Invalid = *Definition;
+    Invalid.get_execution_info = nullptr;
+    EXPECT_EQ(HTNGeneratedPlanner_ValidateDefinition(&Invalid), 0);
+    Invalid = *Definition;
     Invalid.fact_count = 1u;
     Invalid.fact_names = nullptr;
     EXPECT_EQ(HTNGeneratedPlanner_ValidateDefinition(&Invalid), 0);

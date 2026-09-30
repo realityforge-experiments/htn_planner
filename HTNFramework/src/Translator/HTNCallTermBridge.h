@@ -3,7 +3,7 @@
 #pragma once
 
 #include "Core/HTNAtomC.h"
-#include "Core/HTNMissingCallTerm.h"
+#include "Core/HTNCallTermError.h"
 
 #include <stdint.h>
 

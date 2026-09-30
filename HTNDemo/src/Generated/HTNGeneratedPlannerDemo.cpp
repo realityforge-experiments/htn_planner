@@ -22,8 +22,8 @@ HTNGeneratedPlannerBenchmarkSample BenchmarkGeneratedPlannerOnce(
         return Sample;
 
     HTNGeneratedPlannerContext Context{};
-    Context.missing_callterm_policy = HTNMissingCallTermPolicy::Report;
-    Context.missing_callterm_callback = ReportGeneratedDemoMissingCallTerm;
+    Context.callterm_error_policy = HTNCallTermErrorPolicy::Report;
+    Context.callterm_error_callback = ReportGeneratedDemoCallTermError;
     Context.world_state = &inWorldState;
     Context.callterm_binding_context = &inCallTermBindingContext;
     Context.backtracking_mode = inBacktrackingMode;

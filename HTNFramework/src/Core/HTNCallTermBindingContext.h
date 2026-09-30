@@ -3,7 +3,7 @@
 #pragma once
 
 #include "Translator/HTNCallTermBridge.h"
-#include "Core/HTNMissingCallTerm.h"
+#include "Core/HTNCallTermError.h"
 #include "HTNCoreMinimal.h"
 
 #include <array>

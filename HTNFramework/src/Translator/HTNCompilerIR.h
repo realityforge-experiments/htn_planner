@@ -71,6 +71,8 @@ struct HTNIRStaticValue { uint32 Text=0; HTNAtomType AtomType=HTN_ATOM_TYPE_UNBO
 struct HTNIRListElement { HTNAtomType AtomType=HTN_ATOM_TYPE_UNBOUND; uint32 Text=0; int32 IntValue=0; float FloatValue=0.0f; uint32 BoolValue=0, FirstChildRef=0, ChildCount=0; };
 struct HTNIRCondition
 {
+    // Check an assignment destination before evaluating any lowered initializer calls.
+    uint32 AssignmentGuardValue = HTN_IR_NO_INDEX;
     HTNGeneratedConditionKind Kind=HTN_CONDITION_FACT;
     uint32 Id=HTN_IR_NO_INDEX, FirstArgument=0, ArgumentCount=0, FirstChildRef=0, ChildCount=0, OutputValue=HTN_IR_NO_INDEX, ResolvedIndex=HTN_IR_NO_INDEX, SourceLine=0;
     std::string DomainExpression;

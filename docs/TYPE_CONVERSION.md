@@ -23,7 +23,7 @@ struct ClientServices
 ClientServices Services{&Entities};
 auto& Execution = Unit.GetExecutionContext();
 Execution.ClientContext = &Services;
-Execution.MissingCallTermPolicy = HTNMissingCallTermPolicy::FailSilently;
+Execution.CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
 ```
 
 `Unit` is the planning unit associated with `Hook`. It copies the configured
@@ -94,6 +94,7 @@ callback and client pointer are read afresh for every invocation. Atom layouts a
 Regenerate domains and rebuild host, bridge and modules together; older definitions
 and bridge tables are rejected. Remove binding-context `SetClientContext` calls
 and configure the execution descriptor or planning unit instead.
+No engine source or distributed SDK is updated by this change.
 
 ## Writing world-state facts
 
