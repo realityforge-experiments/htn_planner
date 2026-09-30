@@ -91,8 +91,18 @@ The complete public solution built in Debug and Release. All 244 Debug tests
 and 235 Release tests passed on 2026-09-30. Logs:
 `build/logs/public-port-debugger-Debug-tests.log` and
 `build/logs/public-port-debugger-Release-tests.log`.
-The SDK archive must be rebuilt and its external consumers revalidated. Previous
-2.0.4 ZIPs contain the old debugger metadata and are not this candidate.
+The SDK was rebuilt with this correction on 2026-09-30 (build ID
+`c9d2878ef0084464964c779ce7cf4cd0`). All eight variants passed validation
+from a fresh ZIP extraction: 24 external consumer executions and eight
+domain-object/bridge-export checks. Incompatible CRT selections and unknown
+variants were rejected. All 184 payload checksums and the archive SHA-256
+were verified, including the updated instrumented planner ABI `0x48550009`.
+Local validation evidence: `build/logs/release-2.0.4-sdk-audit.json` and
+`build/logs/release-2.0.4-sdk-validation/`.
+
+Release notes were finalized after validation and the archive was repackaged.
+Every binary, header, example and build-provenance file was verified unchanged
+against the validated archive. Earlier local 2.0.4 packages must be replaced.
 
 ### Earlier candidate (before the debugger metadata correction)
 
