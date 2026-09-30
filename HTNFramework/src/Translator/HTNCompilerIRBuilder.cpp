@@ -94,7 +94,7 @@ std::string FormatDomainCondition(const AST::Condition& inNode)
     if (inNode.Kind == AST::ConditionKind::Fact)
         return "(" + FormatDomainValueExpression(*inNode.GetIDNode()) + FormatDomainArguments(inNode.GetArgumentNodes()) + ")";
     if (inNode.Kind == AST::ConditionKind::Axiom)
-        return "(#" + FormatDomainValueExpression(*inNode.GetIDNode()) + FormatDomainArguments(inNode.GetArgumentNodes()) + ")";
+        return "(" + std::string(1u, HTNAxiomCallPrefix) + FormatDomainValueExpression(*inNode.GetIDNode()) + FormatDomainArguments(inNode.GetArgumentNodes()) + ")";
     if (inNode.Kind == AST::ConditionKind::Call)
     {
         std::string Invocation = "(call " + FormatDomainValueExpression(*inNode.GetIDNode()) + FormatDomainArguments(inNode.GetArgumentNodes()) + ")";
@@ -404,6 +404,7 @@ public:
             const uint32 DebugExpressionStringId = Strings.Add(CallRecord.DomainExpression);
             const std::string HiddenName = "__task_call_result_" + std::to_string(SyntheticTaskCallCount++);
             const uint32 HiddenStringId = Strings.Add(HiddenName);
+            DebugInternalVariableStringIds.insert(HiddenStringId);
             CallRecord.OutputSlot = AllocateVariableSlot(HiddenStringId);
             ioCalls.emplace_back(std::move(CallRecord));
 
@@ -446,7 +447,9 @@ public:
     {
         auto Variable = std::make_shared<AST::Value>();
         Variable->Kind = AST::ValueKind::Variable;
-        Variable->Atom = HTNAtomOwner("$assignment_call_" + std::to_string(SyntheticTaskCallCount++));
+        const std::string HiddenName = "$assignment_call_" + std::to_string(SyntheticTaskCallCount++);
+        Variable->Atom = HTNAtomOwner(HiddenName);
+        DebugInternalVariableStringIds.insert(Strings.Add(HiddenName));
         Variable->Range = inValue->Range;
         Variable->FileIndex = inValue->FileIndex;
         auto Binding = std::make_shared<AST::Condition>();
@@ -485,6 +488,18 @@ public:
         return Value;
     }
 
+    void PreserveLoweredConditionSource(const uint32 inSequence, const AST::Condition& inOriginal)
+    {
+        auto& Sequence = Conditions[inSequence];
+        Sequence.DebugExpression = FormatDomainCondition(inOriginal);
+        Sequence.DebugSource = {inOriginal.FileIndex, inOriginal.Range};
+        // The final child carries the original operation; preceding children
+        // evaluate its operands. Keep the whole sequence as one debugger node.
+        Sequence.DebugCondition = ConditionChildRefs[Sequence.FirstChildRef + Sequence.ChildCount - 1u];
+        for (size_t I = inSequence + 1u; I < Conditions.size(); ++I)
+            Conditions[I].DebugInternal = true;
+    }
+
     uint32 AddCondition(const AST::ConditionPtr& inNode)
     {
         if (!inNode) return kNoIndex;
@@ -512,7 +527,9 @@ public:
                 Sequence->Range = inNode->Range;
                 Sequence->FileIndex = inNode->FileIndex;
                 Sequence->Children = std::move(Prefix);
-                return AddCondition(Sequence);
+                const uint32 SequenceIndex = AddCondition(Sequence);
+                PreserveLoweredConditionSource(SequenceIndex, *inNode);
+                return SequenceIndex;
             }
         }
         if (inNode->Kind == AST::ConditionKind::Assignment && HasNestedAssignmentCall(inNode->Arguments[0]))
@@ -532,6 +549,7 @@ public:
                 const uint32 SequenceIndex = AddCondition(Sequence);
                 const uint32 GuardValue = AddValue(*inNode->Output);
                 Conditions[SequenceIndex].AssignmentGuardValue = GuardValue;
+                PreserveLoweredConditionSource(SequenceIndex, *inNode);
                 return SequenceIndex;
             }
         }
@@ -539,6 +557,13 @@ public:
         ConditionRecord Record;
         Record.DomainExpression = FormatDomainCondition(*inNode);
         SetSource(Record, *inNode);
+        Record.DebugSource = Record.Source;
+        Record.DebugExpression = Record.DomainExpression;
+        // Children have their own rows; avoid repeating the entire subtree in a title.
+        if (inNode->Kind == AST::ConditionKind::And) Record.DebugExpression = "(and ...)";
+        if (inNode->Kind == AST::ConditionKind::Or) Record.DebugExpression = "(or ...)";
+        if (inNode->Kind == AST::ConditionKind::Alt) Record.DebugExpression = "(alt ...)";
+        if (inNode->Kind == AST::ConditionKind::Not) Record.DebugExpression = "(not ...)";
         const uint32 Index = static_cast<uint32>(Conditions.size());
         Conditions.push_back(Record);
 

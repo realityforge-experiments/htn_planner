@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Internal, linked-domain representation used by the C compiler backend.
@@ -77,6 +78,11 @@ struct HTNIRCondition
     uint32 Id=HTN_IR_NO_INDEX, FirstArgument=0, ArgumentCount=0, FirstChildRef=0, ChildCount=0, OutputValue=HTN_IR_NO_INDEX, ResolvedIndex=HTN_IR_NO_INDEX, SourceLine=0;
     std::string DomainExpression;
     HTNIRSourceLocation Source;
+    // Source-level identity is independent of the conditions used for execution.
+    std::string DebugExpression;
+    HTNIRSourceLocation DebugSource;
+    uint32 DebugCondition = HTN_IR_NO_INDEX;
+    bool DebugInternal = false;
 };
 struct HTNIRTask
 {
@@ -155,6 +161,7 @@ struct HTNCompilerIR
     std::vector<HTNIRListElement> ListElements;
     std::vector<uint32> ListChildRefs;
     std::vector<uint32> VariableStringIds;
+    std::unordered_set<uint32> DebugInternalVariableStringIds;
     std::unordered_map<uint32, uint32> VariableSlotByStringId;
     std::vector<uint32> PreparedSymbolStringIds;
     std::unordered_map<uint32, uint32> PreparedSymbolSlotByStringId;

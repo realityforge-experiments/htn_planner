@@ -3,7 +3,7 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
-## 2.0.4 - Unreleased
+## 2.0.4 - 2026-09-30
 
 **Breaking compatibility despite the patch version:** migrate the callterm error
 API, regenerate domain C sources and rebuild the host, libraries and domain DLLs.
@@ -24,6 +24,9 @@ This replaces the earlier local 2.0.4 candidate; do not reuse its binaries.
   expressions with file, line and column diagnostics.
 - Update generated debugger/demo reporting and add recursion, capacity recovery,
   nested-callterm and axiom/IO regression coverage.
+- Preserve original expressions and parentheses in the generated debugger; hide
+  compiler temporaries from the tree and watch while retaining outcomes and retries.
+  Instrumented domains and their hosts must be regenerated/rebuilt together.
 - **Compatibility:** planner descriptor and RuntimeBridge ABI revisions change;
   existing status values and `HTNAtom` layout remain unchanged. See
   [2.0.4 migration notes](docs/RELEASE_2_0_4.md).

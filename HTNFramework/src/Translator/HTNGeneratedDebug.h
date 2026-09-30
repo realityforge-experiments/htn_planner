@@ -93,6 +93,10 @@ typedef struct HTNGeneratedDebugCondition
     uint32_t output_value;
     uint32_t resolved_index;
     uint32_t source_line;
+    // Original domain syntax, before nested expressions were lowered.
+    const char* expression;
+    // Compiler-generated evaluation steps have no separate source-level row.
+    uint32_t is_internal;
 } HTNGeneratedDebugCondition;
 
 typedef struct HTNGeneratedDebugTask
@@ -161,6 +165,7 @@ struct HTNGeneratedDebugMetadata
     uint32_t string_count;
     const HTNGeneratedDebugValue* values;
     uint32_t value_count;
+    // HTN_GENERATED_NO_INDEX marks compiler-internal slots hidden from the watch.
     const uint32_t* variable_string_ids;
     uint32_t variable_slot_count;
     const HTNGeneratedDebugCondition* conditions;

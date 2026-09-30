@@ -503,7 +503,7 @@ private:
 
         for (const HTNGeneratedDebugger::Node::TitleToken& Token : inNode.TitleTokens)
         {
-            ImGui::SameLine(0.0f, 4.0f);
+            ImGui::SameLine(0.0f, Token.SpaceBefore ? 4.0f : 0.0f);
             switch (Token.Kind)
             {
             case HTNGeneratedDebugger::Node::TitleTokenKind::Result:

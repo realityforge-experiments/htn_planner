@@ -2417,7 +2417,7 @@ TEST(HTNGeneratedEventDebuggerTest, PreservesConstantNamesInConditionTitles)
     }
 
     ASSERT_NE(SplitNode, nullptr);
-    EXPECT_EQ(SplitNode->DisplayName, "split_list @split_list_input ?head ?tail");
+    EXPECT_EQ(SplitNode->DisplayName, "(split_list @split_list_input ?head ?tail)");
 
     const auto ConstantToken = std::find_if(
         SplitNode->TitleTokens.begin(),
@@ -2473,8 +2473,8 @@ TEST(HTNGeneratedEventDebuggerTest, ExplicitSplitListOperationsPreserveTheirName
         EXPECT_EQ(SplitNode->DisplayName, inExpectedTitle);
     };
 
-    CheckTitle("split_list_front_basic", "split_list_front @split_list_input ?element ?remainder");
-    CheckTitle("split_list_back_basic", "split_list_back @split_list_input ?remainder ?element");
+    CheckTitle("split_list_front_basic", "(split_list_front @split_list_input ?element ?remainder)");
+    CheckTitle("split_list_back_basic", "(split_list_back @split_list_input ?remainder ?element)");
 }
 
 TEST(HTNGeneratedEventDebuggerTest, SplitListConditionTreePreservesSourceOrderAndCompositeStructure)
@@ -2507,7 +2507,7 @@ TEST(HTNGeneratedEventDebuggerTest, SplitListConditionTreePreservesSourceOrderAn
         for (const HTNGeneratedDebugger::Node& Node : outDebugger.GetNodes())
         {
             if (Node.Kind == HTNGeneratedDebugger::NodeKind::Branch &&
-                Node.DisplayName == inBranchName && Node.Started)
+                Node.DisplayName == "(" + std::string(inBranchName) + " ...)" && Node.Started)
                 return &Node;
         }
         return nullptr;
@@ -2548,7 +2548,7 @@ TEST(HTNGeneratedEventDebuggerTest, SplitListConditionTreePreservesSourceOrderAn
         ASSERT_NE(Task, nullptr);
         ASSERT_EQ(AndNode->Kind, HTNGeneratedDebugger::NodeKind::And);
         EXPECT_EQ(Task->Kind, HTNGeneratedDebugger::NodeKind::Task);
-        EXPECT_EQ(Task->DisplayName, "!bound_outputs_match");
+        EXPECT_EQ(Task->DisplayName, "(!bound_outputs_match)");
         ASSERT_EQ(AndNode->Children.size(), 1u);
 
         const HTNGeneratedDebugger::Node* Split = Debugger.FindNode(AndNode->Children[0u]);
@@ -2712,7 +2712,7 @@ TEST(HTNGeneratedDebuggerTest, BacktrackedConditionsKeepGeneratedMetadataPaths)
     const HTNGeneratedDebugger::Node* Branch = nullptr;
     for (const HTNGeneratedDebugger::Node& Node : Debugger.GetNodes())
         if (Node.Kind == HTNGeneratedDebugger::NodeKind::Branch &&
-            Node.DisplayName == "branch_iterate_all_entities")
+            Node.DisplayName == "(branch_iterate_all_entities ...)")
             Branch = &Node;
     ASSERT_NE(Branch, nullptr);
 

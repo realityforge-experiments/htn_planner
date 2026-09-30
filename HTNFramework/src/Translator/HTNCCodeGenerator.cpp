@@ -1371,8 +1371,28 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     });
     const size_t DebugVariableSlotCount=B.VariableStringIds.empty()?1u:B.VariableStringIds.size();
     Out << "static const uint32_t "<<Prefix<<"_DEBUG_VARIABLE_STRING_IDS["<<DebugVariableSlotCount<<"] = {";
-    if(B.VariableStringIds.empty()) Out<<"0u"; else for(size_t I=0;I<B.VariableStringIds.size();++I){if(I)Out<<",";Out<<B.VariableStringIds[I]<<"u";} Out<<"};\n\n";
-    WriteArray(Out,"HTNGeneratedDebugCondition",Prefix+"_DEBUG_CONDITIONS",B.Conditions,[](auto& O,const auto& V){O<<"{"<<ConditionKindCName(V.Kind)<<","<<(V.Id==kNoIndex?"HTN_NO_INDEX":(V.Kind==HTN_CONDITION_BUILTIN_COMPARISON?std::string(BuiltinComparisonOperatorCName(V.Id)):std::to_string(V.Id)+"u"))<<","<<V.FirstArgument<<"u,"<<V.ArgumentCount<<"u,"<<V.FirstChildRef<<"u,"<<V.ChildCount<<"u,"<<(V.OutputValue==kNoIndex?"HTN_NO_INDEX":std::to_string(V.OutputValue)+"u")<<","<<(V.ResolvedIndex==kNoIndex?"HTN_NO_INDEX":std::to_string(V.ResolvedIndex)+"u")<<","<<V.SourceLine<<"u}";});
+    if (B.VariableStringIds.empty()) Out << "0u";
+    for (size_t I = 0; I < B.VariableStringIds.size(); ++I)
+    {
+        if (I) Out << ",";
+        const uint32 Id = B.VariableStringIds[I];
+        if (B.DebugInternalVariableStringIds.count(Id)) Out << "HTN_NO_INDEX";
+        else Out << Id << "u";
+    }
+    Out << "};\n\n";
+    WriteArray(Out, "HTNGeneratedDebugCondition", Prefix + "_DEBUG_CONDITIONS", B.Conditions, [&B](auto& O, const auto& V)
+    {
+        const auto& D = V.DebugCondition == kNoIndex ? V : B.Conditions[V.DebugCondition];
+        O << "{" << ConditionKindCName(D.Kind) << ","
+          << (D.Id == kNoIndex ? "HTN_NO_INDEX" : (D.Kind == HTN_CONDITION_BUILTIN_COMPARISON
+                ? std::string(BuiltinComparisonOperatorCName(D.Id)) : std::to_string(D.Id) + "u"))
+          << "," << D.FirstArgument << "u," << D.ArgumentCount << "u,"
+          << V.FirstChildRef << "u," << V.ChildCount << "u,"
+          << (D.OutputValue == kNoIndex ? "HTN_NO_INDEX" : std::to_string(D.OutputValue) + "u") << ","
+          << (D.ResolvedIndex == kNoIndex ? "HTN_NO_INDEX" : std::to_string(D.ResolvedIndex) + "u") << ","
+          << V.DebugSource.Range.Begin.Line << "u,\"" << EscapeCString(V.DebugExpression) << "\","
+          << (V.DebugInternal ? "1u" : "0u") << "}";
+    });
     const size_t DebugConditionChildCount=B.ConditionChildRefs.empty()?1u:B.ConditionChildRefs.size();
     Out << "static const uint32_t "<<Prefix<<"_DEBUG_CONDITION_CHILD_REFS["<<DebugConditionChildCount<<"] = {";
     if(B.ConditionChildRefs.empty()) Out<<"0u"; else for(size_t I=0;I<B.ConditionChildRefs.size();++I){if(I)Out<<",";Out<<B.ConditionChildRefs[I]<<"u";} Out<<"};\n\n";
@@ -1414,7 +1434,12 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         });
     };
     WriteSources("_DEBUG_VALUE_SOURCES", B.Values);
-    WriteSources("_DEBUG_CONDITION_SOURCES", B.Conditions);
+    WriteArray(Out, "HTNGeneratedDebugSourceRange", Prefix + "_DEBUG_CONDITION_SOURCES", B.Conditions, [](auto& O, const auto& V)
+    {
+        const auto& S = V.DebugSource;
+        O << "{" << S.FileIndex << "u," << S.Range.Begin.Line << "u," << S.Range.Begin.Column
+          << "u," << S.Range.End.Line << "u," << S.Range.End.Column << "u}";
+    });
     WriteSources("_DEBUG_TASK_SOURCES", B.Tasks);
     WriteSources("_DEBUG_BRANCH_SOURCES", B.Branches);
     WriteSources("_DEBUG_METHOD_SOURCES", B.Methods);

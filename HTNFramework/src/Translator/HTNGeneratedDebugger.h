@@ -70,6 +70,7 @@ public:
         {
             TitleTokenKind Kind = TitleTokenKind::Normal;
             std::string Text;
+            bool SpaceBefore = true;
         };
 
         struct VariableValue
@@ -110,6 +111,7 @@ public:
         mDomainPath = inDomainPath ? inDomainPath : std::string();
         mNodes.clear();
         mOpenNodes.clear();
+        mConditionVisibility.clear();
         mPendingTasks.clear();
         ++mRevision;
     }
@@ -128,6 +130,7 @@ public:
         if (!mEnabled || !inDomain || !inDomain->debug_metadata || inMethodIndex >= inDomain->debug_metadata->method_count) return;
         const HTNGeneratedDebugMethod& DebugMethod = inDomain->debug_metadata->methods[inMethodIndex];
         BeginNode(NodeKind::Plan, inMethodIndex, DebugMethod.source_line, ResolveString(inDomain, DebugMethod.id, "plan"));
+        mNodes.back().DisplayName = "(" + mNodes.back().DisplayName + ")";
         ApplySourceLocation(mNodes.back(), inDomain, inDomain->debug_metadata->method_sources, inMethodIndex, inDomain->debug_metadata->method_count);
         SetCurrentNodeScopeMask(DebugMethod.variable_slot_mask);
         CaptureCurrentVariables(inDomain, inValues, inBoundMask, inSlotCount, true);
@@ -140,6 +143,7 @@ public:
         if (!mEnabled || !inDomain || !inDomain->debug_metadata || inMethodIndex >= inDomain->debug_metadata->method_count) return;
         const HTNGeneratedDebugMethod& DebugMethod = inDomain->debug_metadata->methods[inMethodIndex];
         BeginNode(NodeKind::Method, inMethodIndex, DebugMethod.source_line, ResolveString(inDomain, DebugMethod.id, "method"));
+        BuildDeclarationTitle(inDomain, "method", DebugMethod.first_parameter, DebugMethod.parameter_count, mNodes.back());
         ApplySourceLocation(mNodes.back(), inDomain, inDomain->debug_metadata->method_sources, inMethodIndex, inDomain->debug_metadata->method_count);
         SetCurrentNodeScopeMask(DebugMethod.variable_slot_mask);
         CaptureCurrentVariables(inDomain, inValues, inBoundMask, inSlotCount, true);
@@ -152,6 +156,7 @@ public:
         if (!mEnabled || !inDomain || !inDomain->debug_metadata || !inDomain->debug_metadata->branches || inBranchIndex >= inDomain->debug_metadata->branch_count) return;
         const HTNGeneratedDebugBranch& Branch = inDomain->debug_metadata->branches[inBranchIndex];
         BeginNode(NodeKind::Branch, inBranchIndex, Branch.source_line, ResolveString(inDomain, Branch.id, "branch"));
+        mNodes.back().DisplayName = "(" + mNodes.back().DisplayName + " ...)";
         ApplySourceLocation(mNodes.back(), inDomain, inDomain->debug_metadata->branch_sources, inBranchIndex, inDomain->debug_metadata->branch_count);
         BuildBranchScopeMask(inDomain, Branch, mNodes.back().ScopeVariableMask);
         AddParentMethodParametersToScope(inDomain, mNodes.back());
@@ -196,6 +201,7 @@ public:
         if (!mEnabled || !inDomain || !inDomain->debug_metadata || !inDomain->debug_metadata->axioms || inAxiomIndex >= inDomain->debug_metadata->axiom_count) return;
         const HTNGeneratedDebugAxiom& DebugAxiom = inDomain->debug_metadata->axioms[inAxiomIndex];
         BeginNode(NodeKind::Axiom, inAxiomIndex, DebugAxiom.source_line, ResolveString(inDomain, DebugAxiom.id, "axiom"));
+        BuildDeclarationTitle(inDomain, "axiom", DebugAxiom.first_parameter, DebugAxiom.parameter_count, mNodes.back());
         ApplySourceLocation(mNodes.back(), inDomain, inDomain->debug_metadata->axiom_sources, inAxiomIndex, inDomain->debug_metadata->axiom_count);
         SetCurrentNodeScopeMask(DebugAxiom.variable_slot_mask);
         CaptureCurrentVariables(inDomain, inValues, inBoundMask, inSlotCount, true);
@@ -205,7 +211,12 @@ public:
 
     void BeginCondition(const HTNGeneratedPlannerDefinition* inDomain, const std::uint32_t inConditionIndex, const HTNAtom* inValues = nullptr, const std::uint64_t* inBoundMask = nullptr, const std::uint32_t inSlotCount = 0u)
     {
-        if (!mEnabled || !inDomain || !inDomain->debug_metadata || !inDomain->debug_metadata->conditions || inConditionIndex >= inDomain->debug_metadata->condition_count) return;
+        if (!mEnabled) return;
+        const bool Visible = inDomain && inDomain->debug_metadata && inDomain->debug_metadata->conditions &&
+            inConditionIndex < inDomain->debug_metadata->condition_count &&
+            !inDomain->debug_metadata->conditions[inConditionIndex].is_internal;
+        mConditionVisibility.push_back(Visible);
+        if (!Visible) return;
 
         // Composite conditions pre-create their complete metadata subtree so the
         // debugger can always show every precondition, including terms skipped by
@@ -241,9 +252,26 @@ public:
         CaptureCurrentVariables(inDomain, inValues, inBoundMask, inSlotCount, true);
     }
 
-    void EndCondition(const HTNGeneratedPlannerDefinition* inDomain, const HTNAtom* inValues, const std::uint64_t* inBoundMask, const std::uint32_t inSlotCount, const bool inResult) { EndNode(inDomain, inValues, inBoundMask, inSlotCount, inResult); }
+    void EndCondition(const HTNGeneratedPlannerDefinition* inDomain, const HTNAtom* inValues, const std::uint64_t* inBoundMask, const std::uint32_t inSlotCount, const bool inResult)
+    {
+        if (!mEnabled || mConditionVisibility.empty()) return;
+        const bool Visible = mConditionVisibility.back();
+        mConditionVisibility.pop_back();
+        if (Visible) EndNode(inDomain, inValues, inBoundMask, inSlotCount, inResult);
+    }
 
 private:
+    static void BuildDeclarationTitle(const HTNGeneratedPlannerDefinition* inDomain, const char* inDeclaration,
+                                      const std::uint32_t inFirstParameter, const std::uint32_t inParameterCount,
+                                      Node& ioNode)
+    {
+        std::string Title = "(" + std::string(1u, HTNDeclarationPrefix) + inDeclaration + " (" + ioNode.DisplayName;
+        const auto& Metadata = *inDomain->debug_metadata;
+        for (std::uint32_t I = 0; Metadata.values && I < inParameterCount && inFirstParameter + I < Metadata.value_count; ++I)
+            Title += " " + std::string(ResolveString(inDomain, Metadata.values[inFirstParameter + I].text, "?"));
+        ioNode.DisplayName = Title + ") ...)";
+    }
+
     static void ApplySourceLocation(Node& ioNode, const HTNGeneratedPlannerDefinition* inDomain,
                                     const HTNGeneratedDebugSourceRange* inRanges,
                                     const std::uint32_t inIndex, const std::uint32_t inCount)
@@ -429,14 +457,16 @@ private:
                 Head.insert(Head.begin(), HTNPrimitiveTaskPrefix);
         }
 
-        AddTitleToken(ioNode, Node::TitleTokenKind::Normal, Head);
+        AddTitleToken(ioNode, Node::TitleTokenKind::Normal, "(" + Head);
         for (std::uint32_t I = 0u; I < inTask.argument_count; ++I)
             AddValueTitleToken(inDomain, inTask.first_argument + I, ioNode);
+        AddTitleToken(ioNode, Node::TitleTokenKind::Normal, ")");
+        ioNode.TitleTokens.back().SpaceBefore = false;
 
         ioNode.DisplayName.clear();
         for (const Node::TitleToken& Token : ioNode.TitleTokens)
         {
-            if (!ioNode.DisplayName.empty())
+            if (!ioNode.DisplayName.empty() && Token.SpaceBefore)
                 ioNode.DisplayName += ' ';
             ioNode.DisplayName += Token.Text;
         }
@@ -447,77 +477,55 @@ private:
                                           Node& ioNode)
     {
         ioNode.TitleTokens.clear();
-        switch (inCondition.kind)
+        ioNode.DisplayName = inCondition.expression ? inCondition.expression : "<condition>";
+        const std::string& Expression = ioNode.DisplayName;
+        bool Head = false;
+        bool CallName = false;
+        // Split compiler-formatted source for coloring only. Execution and variable
+        // resolution continue to use the IR metadata, never this display text.
+        for (size_t I = 0; I < Expression.size();)
         {
-        case HTN_CONDITION_FACT:
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, ResolveString(inDomain, inCondition.id, "fact"));
-            break;
-        case HTN_CONDITION_AXIOM:
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result,
-                          std::string(1u, HTNAxiomCallPrefix) +
-                              ResolveString(inDomain, inCondition.id, "axiom"));
-            break;
-        case HTN_CONDITION_CALL:
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, "call");
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, ResolveString(inDomain, inCondition.id, "call"));
-            break;
-        case HTN_CONDITION_ASSIGNMENT:
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, "=");
-            AddValueTitleToken(inDomain, inCondition.output_value, ioNode);
-            break;
-        case HTN_CONDITION_CALL_BIND:
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, "=");
-            if (inCondition.output_value != HTN_GENERATED_NO_INDEX)
-                AddValueTitleToken(inDomain, inCondition.output_value, ioNode);
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, "call");
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, ResolveString(inDomain, inCondition.id, "call"));
-            break;
-        case HTN_CONDITION_BUILTIN_COMPARISON:
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, BuiltinComparisonName(inCondition.id));
-            break;
-        case HTN_CONDITION_BUILTIN_LIST_SPLIT:
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, BuiltinListSplitName(inCondition.id));
-            break;
-        case HTN_CONDITION_AND:
-        case HTN_CONDITION_OR:
-        case HTN_CONDITION_ALT:
-        case HTN_CONDITION_NOT:
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, ConditionName(inCondition.kind));
-            break;
-        default:
-            AddTitleToken(ioNode, Node::TitleTokenKind::Result, ConditionName(inCondition.kind));
-            break;
-        }
-
-        if (inCondition.kind == HTN_CONDITION_FACT ||
-            inCondition.kind == HTN_CONDITION_AXIOM ||
-            inCondition.kind == HTN_CONDITION_CALL ||
-            inCondition.kind == HTN_CONDITION_CALL_BIND ||
-            inCondition.kind == HTN_CONDITION_ASSIGNMENT ||
-            inCondition.kind == HTN_CONDITION_BUILTIN_COMPARISON ||
-            inCondition.kind == HTN_CONDITION_BUILTIN_LIST_SPLIT)
-        {
-            if (inCondition.kind == HTN_CONDITION_BUILTIN_LIST_SPLIT &&
-                inCondition.id == HTN_BUILTIN_LIST_SPLIT_BACK &&
-                inCondition.argument_count == 3u)
+            if (Expression[I] == ' ') { ++I; continue; }
+            const size_t Begin = I;
+            const char First = Expression[I++];
+            if (First == '"')
             {
-                AddValueTitleToken(inDomain, inCondition.first_argument, ioNode);
-                AddValueTitleToken(inDomain, inCondition.first_argument + 2u, ioNode);
-                AddValueTitleToken(inDomain, inCondition.first_argument + 1u, ioNode);
+                while (I < Expression.size())
+                {
+                    const char C = Expression[I++];
+                    if (C == '\\' && I < Expression.size()) ++I;
+                    else if (C == '"') break;
+                }
             }
-            else
+            else if (First != '(' && First != ')')
             {
-                for (std::uint32_t I = 0u; I < inCondition.argument_count; ++I)
-                    AddValueTitleToken(inDomain, inCondition.first_argument + I, ioNode);
+                while (I < Expression.size() && Expression[I] != ' ' &&
+                       Expression[I] != '(' && Expression[I] != ')') ++I;
             }
-        }
-
-        ioNode.DisplayName.clear();
-        for (const Node::TitleToken& Token : ioNode.TitleTokens)
-        {
-            if (!ioNode.DisplayName.empty())
-                ioNode.DisplayName += ' ';
-            ioNode.DisplayName += Token.Text;
+            const std::string Text = Expression.substr(Begin, I - Begin);
+            auto Kind = Node::TitleTokenKind::Normal;
+            if (First == HTNVariablePrefix) Kind = Node::TitleTokenKind::Variable;
+            else if (First == HTNConstantPrefix) Kind = Node::TitleTokenKind::Constant;
+            else if (First == '"') Kind = Node::TitleTokenKind::StringLiteral;
+            else if (Text == "call" || CallName) Kind = Node::TitleTokenKind::CallExpression;
+            else if (Head && First != ')') Kind = Node::TitleTokenKind::Result;
+            AddTitleToken(ioNode, Kind, Text);
+            ioNode.TitleTokens.back().SpaceBefore = Begin == 0 || Expression[Begin - 1u] == ' ';
+            Head = First == '(';
+            CallName = Text == "call";
+            if (Kind == Node::TitleTokenKind::Constant && inDomain && inDomain->debug_metadata)
+            {
+                const auto& Metadata = *inDomain->debug_metadata;
+                for (std::uint32_t V = 0; Metadata.values && V < Metadata.value_count; ++V)
+                {
+                    const auto& Value = Metadata.values[V];
+                    if (Text == ResolveString(inDomain, Value.text, ""))
+                    {
+                        AddConstantValue(ioNode, Text, ResolveString(inDomain, Value.resolved_text, "<unresolved>"));
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -566,6 +574,7 @@ private:
             return HTN_GENERATED_NO_INDEX;
 
         const HTNGeneratedDebugCondition& Condition = inDomain->debug_metadata->conditions[inConditionIndex];
+        if (Condition.is_internal) return HTN_GENERATED_NO_INDEX;
         Node NewNode;
         NewNode.EventNodeId = static_cast<std::uint32_t>(mNodes.size());
         NewNode.MetadataIndex = inConditionIndex;
@@ -749,6 +758,8 @@ private:
         Out.reserve(SlotCount);
         for (std::uint32_t Slot = 0u; Slot < SlotCount; ++Slot)
         {
+            if (inDomain->debug_metadata->variable_string_ids[Slot] == HTN_GENERATED_NO_INDEX)
+                continue;
             const std::uint64_t Mask = std::uint64_t{1} << (Slot & 63u);
             if ((inBoundMask[Slot >> 6u] & Mask) == 0u)
                 continue;
@@ -786,6 +797,9 @@ private:
     std::string mDomainPath;
     std::vector<Node> mNodes;
     std::vector<std::uint32_t> mOpenNodes;
+    // Hidden conditions still emit balanced events. Keep their nesting separate
+    // from visible method/axiom/task nodes so their End event cannot close a parent.
+    std::vector<bool> mConditionVisibility;
     std::vector<PendingTask> mPendingTasks;
     std::uint64_t mRevision = 0u;
 };

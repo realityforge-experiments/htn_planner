@@ -25,6 +25,32 @@ begin and end events. `HTNGeneratedDebugger` turns those events into nodes conta
 - Bound variables before and after the event.
 - Historical alternatives created by backtracking and retries.
 
+### Source expressions and compiler temporaries
+
+Condition titles preserve the original domain expression, including nested calls,
+arithmetic and parentheses. For example:
+
+```lisp
+(= ?new_entity_position (call get_entity_position ?entity_id))
+(< (call get_distance_from_to ?old_entity_position ?new_entity_position) 0.2)
+```
+
+The compiler can lower one expression into several internal assignments. These
+steps still execute, but their metadata explicitly marks them as internal: they
+do not create separate debugger rows or expose temporary variables in the watch.
+The visible row reports the result of the whole expression. Backtracking can
+create additional attempts of that same source expression.
+
+Composite conditions and declarations use `...` for their child rows; leaf
+conditions and tasks display complete parenthesized expressions. This is a
+structured source view, not a reproduction of comments or original indentation.
+The visible assignment source range covers the assignment, while a callterm error
+inside its initializer continues to report the location of `(call ...)`.
+
+This correction changes debug metadata layout. Regenerate instrumented domains
+and rebuild their hosts together (debug planner descriptor revision 9). Plain
+and profiling-only planner layouts, RuntimeBridge ABI and `HTNAtom` are unchanged.
+
 ## Build configuration
 
 The runtime, generated domain and consuming application must be built with

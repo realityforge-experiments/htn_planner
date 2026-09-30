@@ -9,6 +9,7 @@
 #include "Translator/HTNCCodeGenerator.h"
 #include "Translator/HTNCompilerDomainLoader.h"
 #include "Translator/HTNCompilerIRBuilder.h"
+#include "Translator/HTNGeneratedDebugger.h"
 #include "gtest/gtest.h"
 #include <filesystem>
 #include <fstream>
@@ -46,6 +47,44 @@ std::string Read(const std::filesystem::path& inPath)
     std::ifstream Input(inPath, std::ios::binary);
     return {std::istreambuf_iterator<char>(Input), std::istreambuf_iterator<char>()};
 }
+
+#ifdef HTN_DEBUG_DECOMPOSITION
+void CheckSourceCapture(const HTNGeneratedDebugger& inDebugger)
+{
+    int Roots = 0;
+    for (const auto& Node : inDebugger.GetNodes())
+    {
+        SCOPED_TRACE(Node.DisplayName);
+        ASSERT_FALSE(Node.DisplayName.empty());
+        EXPECT_EQ(Node.DisplayName.front(), '(');
+        EXPECT_EQ(Node.DisplayName.back(), ')');
+        EXPECT_EQ(Node.DisplayName.find("$assignment_call_"), std::string::npos);
+        EXPECT_EQ(Node.DisplayName.find("__task_call_result_"), std::string::npos);
+        if (Node.Started) EXPECT_TRUE(Node.Completed);
+        if (Node.ParentEventNodeId == HTN_GENERATED_NO_INDEX) ++Roots;
+        for (const auto Child : Node.Children)
+        {
+            const auto* ChildNode = inDebugger.FindNode(Child);
+            ASSERT_NE(ChildNode, nullptr);
+            EXPECT_EQ(ChildNode->ParentEventNodeId, Node.EventNodeId);
+        }
+        std::string Rendered;
+        for (const auto& Token : Node.TitleTokens)
+        {
+            if (!Rendered.empty() && Token.SpaceBefore) Rendered += ' ';
+            Rendered += Token.Text;
+        }
+        if (!Node.TitleTokens.empty()) EXPECT_EQ(Rendered, Node.DisplayName);
+        for (const auto* Values : {&Node.VariablesBefore, &Node.VariablesAfter})
+            for (const auto& Value : *Values)
+            {
+                EXPECT_EQ(Value.Name.find("$assignment_call_"), std::string::npos);
+                EXPECT_EQ(Value.Name.find("__task_call_result_"), std::string::npos);
+            }
+    }
+    EXPECT_EQ(Roots, 1);
+}
+#endif
 }
 
 TEST(HTNNestedCallExpressionTest, TranslatorEmitsInvocationInsteadOfCallNameValue)
@@ -103,10 +142,18 @@ TEST(HTNNestedCallExpressionTest, ValuesParticipateInBothOperandsAndEveryOperato
         SCOPED_TRACE(Test.Entry);
         HTNPlanningUnit Unit(Database, Hook, Test.Entry);
         Unit.GetExecutionContext().CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
+#ifdef HTN_DEBUG_DECOMPOSITION
+        HTNGeneratedDebugger Debugger;
+        Debugger.SetEnabled(true);
+        Unit.SetGeneratedDebugger(&Debugger);
+#endif
         Calls = 0;
         ASSERT_EQ(Unit.DecomposeTopLevelMethod(), HTN_DECOMPOSITION_SUCCEEDED);
         EXPECT_EQ(Calls, Test.Calls);
         EXPECT_EQ(Unit.GetCurrentPlan().size(), 1u);
+#ifdef HTN_DEBUG_DECOMPOSITION
+        CheckSourceCapture(Debugger);
+#endif
     }
 }
 
@@ -140,6 +187,11 @@ TEST(HTNNestedCallExpressionTest, MissingPoliciesReasonsCountAndExpressionSource
                 Context.ClientContext = &Client;
                 Context.CallTermErrorPolicy = Policy;
                 Context.CallTermErrorCallback = Report;
+#ifdef HTN_DEBUG_DECOMPOSITION
+                HTNGeneratedDebugger Debugger;
+                Debugger.SetEnabled(true);
+                Unit.SetGeneratedDebugger(&Debugger);
+#endif
                 for (int Attempt = 0; Attempt < 2; ++Attempt)
                 {
                     Client.Count = 0;
@@ -147,6 +199,9 @@ TEST(HTNNestedCallExpressionTest, MissingPoliciesReasonsCountAndExpressionSource
                     const int ExpectedReports = Policy == HTNCallTermErrorPolicy::FailSilently || Entry == "short_circuit" ? 0 : Entry == "two_attempts" ? 2 : 1;
                     EXPECT_EQ(Client.Count, ExpectedReports);
                     EXPECT_EQ(OuterCalls, 0);
+#ifdef HTN_DEBUG_DECOMPOSITION
+                    CheckSourceCapture(Debugger);
+#endif
                     if (ExpectedReports == 0) continue;
                     EXPECT_EQ(Client.Reason, Reason);
                     EXPECT_EQ(Client.Name, "missing_distance_callterm");
@@ -185,3 +240,136 @@ TEST(HTNNestedCallExpressionTest, UnsetKeepsSdkContractForNestedInvocation)
     EXPECT_EQ(Unit.DecomposeTopLevelMethod(), HTN_DECOMPOSITION_NO_PLAN);
 #endif
 }
+
+TEST(HTNNestedCallExpressionTest, ContinueMoveDebuggerPreservesSourceAndExecution)
+{
+    HTNDatabaseHook Database;
+    Database.GetWorldState().AddFact("active_plan", std::vector<HTNAtomOwner>{
+        HTNAtomOwner(int32{1}), HTNAtomOwner(HtnSymbol::sGetSymbol("moving_to_seen_entity")),
+        HTNAtomOwner(int32{42}), HTNAtomOwner(int32{10})});
+    HTNCallTermRegistry Registry;
+    int PositionCalls = 0, DistanceCalls = 0;
+    float Distance = 0.1f;
+    Registry.Bind("get_entity_position", [&](const HTNCallTermArguments& Arguments) {
+        ++PositionCalls;
+        EXPECT_EQ(Arguments.size(), 1u);
+        EXPECT_EQ(HTNAtomGetValue<int32>(Arguments[0]), 42);
+        return int32{20};
+    });
+    Registry.Bind("get_distance_from_to", [&](const HTNCallTermArguments& Arguments) {
+        ++DistanceCalls;
+        EXPECT_EQ(Arguments.size(), 2u);
+        EXPECT_EQ(HTNAtomGetValue<int32>(Arguments[0]), 10);
+        EXPECT_EQ(HTNAtomGetValue<int32>(Arguments[1]), 20);
+        return Distance;
+    });
+    HTNPlannerHook Hook(Database.GetWorldState(), Registry);
+    ASSERT_TRUE(Hook.SetGeneratedPlannerDefinition(CreateNestedOperatorCallsHTN_GetDefinition()));
+    HTNPlanningUnit Unit(Database, Hook, "continue_move");
+    Unit.GetExecutionContext().CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
+#ifdef HTN_DEBUG_DECOMPOSITION
+    HTNGeneratedDebugger Debugger;
+    Debugger.SetEnabled(true);
+    Unit.SetGeneratedDebugger(&Debugger);
+    const auto File = HTNFileHelpers::MakeAbsolutePath("Domains/Test/nested_operator_calls.domain");
+    const HTNSourceText Source(Read(File));
+    const std::string Assignment = "(= ?new_entity_position (call get_entity_position ?entity_id))";
+    const std::string Comparison = "(< (call get_distance_from_to ?old_entity_position ?new_entity_position) 0.2)";
+#endif
+    for (const bool ShouldContinue : {true, false, true})
+    {
+        SCOPED_TRACE(ShouldContinue);
+        PositionCalls = DistanceCalls = 0;
+        Distance = ShouldContinue ? 0.1f : 0.3f;
+#ifdef HTN_DEBUG_DECOMPOSITION
+        Debugger.Reset();
+#endif
+        ASSERT_EQ(Unit.DecomposeTopLevelMethod(), ShouldContinue ? HTN_DECOMPOSITION_SUCCEEDED : HTN_DECOMPOSITION_NO_PLAN);
+        EXPECT_EQ(PositionCalls, 1);
+        EXPECT_EQ(DistanceCalls, 1);
+        EXPECT_EQ(Unit.GetCurrentPlan().size(), ShouldContinue ? 1u : 0u);
+#ifdef HTN_DEBUG_DECOMPOSITION
+        CheckSourceCapture(Debugger);
+        int Assignments = 0, Comparisons = 0;
+        for (const auto& Node : Debugger.GetNodes())
+        {
+            EXPECT_EQ(Node.DisplayName.find("$assignment_call_"), std::string::npos) << Node.DisplayName;
+            for (const auto* Values : {&Node.VariablesBefore, &Node.VariablesAfter})
+                for (const auto& Value : *Values)
+                    EXPECT_EQ(Value.Name.find("$assignment_call_"), std::string::npos) << Value.Name;
+            if (Node.Started) EXPECT_TRUE(Node.Completed) << Node.DisplayName;
+            if (!Node.Started || (Node.DisplayName != Assignment && Node.DisplayName != Comparison)) continue;
+            const bool IsComparison = Node.DisplayName == Comparison;
+            IsComparison ? ++Comparisons : ++Assignments;
+            EXPECT_EQ(Node.Succeeded, !IsComparison || ShouldContinue);
+            EXPECT_EQ(Node.Kind, IsComparison ? HTNGeneratedDebugger::NodeKind::BuiltinComparison : HTNGeneratedDebugger::NodeKind::CallBind);
+            // Comparison AST ranges begin at the operator; assignment ranges
+            // begin at the opening parenthesis. Preserve both source contracts.
+            const auto Position = Source.GetPosition(Source.GetText().find(Node.DisplayName) + (IsComparison ? 1u : 0u));
+            EXPECT_EQ(Node.Source.Line, static_cast<uint32_t>(Position.Line));
+            EXPECT_EQ(Node.Source.Column, static_cast<uint32_t>(Position.Column));
+            EXPECT_TRUE(Node.Children.empty()) << Node.DisplayName;
+        }
+        EXPECT_EQ(Assignments, 1);
+        EXPECT_EQ(Comparisons, 1);
+#endif
+    }
+}
+
+#ifdef HTN_DEBUG_DECOMPOSITION
+TEST(HTNNestedCallExpressionTest, DebuggerKeepsRetriesSkippedExpressionsAndNestedAssignments)
+{
+    HTNDatabaseHook Database;
+    Database.GetWorldState().AddFact("candidate", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{3})});
+    Database.GetWorldState().AddFact("candidate", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{1})});
+    HTNCallTermRegistry Registry;
+    int Calls = 0;
+    Registry.Bind("identity", [&](const HTNCallTermArguments& Arguments) { ++Calls; return HTNAtomOwner(Arguments[0]); });
+    Registry.Bind("distance", [&](const HTNCallTermArguments&) { ++Calls; return 0.1f; });
+    HTNPlannerHook Hook(Database.GetWorldState(), Registry);
+    ASSERT_TRUE(Hook.SetGeneratedPlannerDefinition(CreateNestedOperatorCallsHTN_GetDefinition()));
+    struct Case { const char* Entry; const char* Expression; int Calls; int Attempts; int Successes; };
+    for (const auto Test : {
+        Case{"debugger_backtracking", "(< (call identity ?entity) 2)", 2, 2, 1},
+        Case{"debugger_skipped", "(< (call distance) 0.2)", 0, 0, 0},
+        Case{"debugger_assignment", "(= ?value (call identity (+ 1 (call identity 2))))", 2, 1, 1}})
+    {
+        SCOPED_TRACE(Test.Entry);
+        HTNGeneratedDebugger Debugger;
+        Debugger.SetEnabled(true);
+        HTNPlanningUnit Unit(Database, Hook, Test.Entry);
+        Unit.SetGeneratedDebugger(&Debugger);
+        Unit.GetExecutionContext().CallTermErrorPolicy = HTNCallTermErrorPolicy::FailSilently;
+        Calls = 0;
+        EXPECT_EQ(Unit.DecomposeTopLevelMethod(), Test.Successes ? HTN_DECOMPOSITION_SUCCEEDED : HTN_DECOMPOSITION_NO_PLAN);
+        EXPECT_EQ(Calls, Test.Calls);
+        CheckSourceCapture(Debugger);
+        int Rows = 0, Attempts = 0, Successes = 0;
+        for (const auto& Node : Debugger.GetNodes())
+        {
+            if (Node.DisplayName != Test.Expression) continue;
+            ++Rows;
+            Attempts += Node.Started ? 1 : 0;
+            Successes += Node.Succeeded ? 1 : 0;
+            EXPECT_TRUE(Node.Children.empty());
+            const auto* Parent = Debugger.FindNode(Node.ParentEventNodeId);
+            ASSERT_NE(Parent, nullptr);
+            EXPECT_EQ(Parent->Kind, HTNGeneratedDebugger::NodeKind::And);
+            if (std::string(Test.Entry) == "debugger_assignment")
+            {
+                bool HasOutput = false;
+                for (const auto& Value : Node.VariablesAfter)
+                    if (Value.Name == "value")
+                    {
+                        HasOutput = true;
+                        EXPECT_EQ(HTNAtomGetValue<int32>(*Value.Value.Get()), 3);
+                    }
+                EXPECT_TRUE(HasOutput);
+            }
+        }
+        EXPECT_GT(Rows, 0);
+        EXPECT_EQ(Attempts, Test.Attempts);
+        EXPECT_EQ(Successes, Test.Successes);
+    }
+}
+#endif
