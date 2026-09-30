@@ -5,6 +5,19 @@ written in a small declarative language and translated ahead of time into native
 The runtime executes the generated planner directly and does not parse domain source
 during gameplay.
 
+## Project status
+
+HTN Planner is under active development. Published releases are tested, while the
+public API, domain language and generated-code ABI continue to evolve.
+
+Before upgrading, review the release notes for compatibility changes and migration
+instructions. Some updates require regenerating domains and rebuilding the
+integration.
+
+Feedback, bug reports and integration experiences are welcome.
+
+## Overview
+
 The repository includes:
 
 - The generated planner runtime and its C ABI.
