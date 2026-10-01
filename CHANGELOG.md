@@ -3,7 +3,7 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
-## 2.1.0 - In preparation
+## 2.1.0 - 2026-10-01
 
 - Add a [domain language tutorial and reference](docs/DOMAIN_LANGUAGE.md),
   also included in the SDK, with translator-checked examples.

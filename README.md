@@ -27,7 +27,7 @@ The repository includes:
 - An editor, language server, hot reload example, tests and benchmarks.
 - A packageable Windows x64 SDK with CMake integration.
 
-Version **2.1.0 is being prepared** with runtime list expressions, explicit
+Version **2.1.0** adds runtime list expressions, explicit
 diagnostics for non-boolean callterm conditions, and smaller generated C through
 shared implementations, reachability analysis and optional instrumentation.
 The C runtime ABI is unchanged from 2.0.4. Regenerate and recompile domains to

@@ -2,7 +2,7 @@
 
 - [Domain language: tutorial and reference](DOMAIN_LANGUAGE.md)
 
-- [2.1.0 release candidate](RELEASE_2_1_0.md)
+- [2.1.0 release notes](RELEASE_2_1_0.md)
 - [Runtime list expressions](RUNTIME_LISTS.md)
 - [Standalone callterm conditions](RELEASE_NOTES_BOOLEAN_CALLTERMS.md)
 - [Generated C instrumentation and size reduction](GENERATED_INSTRUMENTATION.md)

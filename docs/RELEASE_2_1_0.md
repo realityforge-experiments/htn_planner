@@ -1,6 +1,6 @@
 # HTN Planner 2.1.0
 
-Status: release candidate; publication and client engine acceptance are pending.
+Release: **2.1.0**. Release notes finalized on **2026-10-01**.
 Windows x64/MSVC v143 is the supported distribution target.
 
 ## Changes
@@ -89,6 +89,10 @@ Validated in the public repository on 2026-10-01:
 - The complete solution built in Debug and Release. All 335 Debug and 326 Release
   tests passed without exclusions, including runtime lists, callterm diagnostics,
   shared implementations, public/deferred entries and generated recursion.
+- The final Profile rebuild passed all 326 tests without exclusions. The
+  allocation probe and hot reload pipeline self-tests passed, including candidate
+  isolation, failed-reload rollback, deferred calls and preservation of NPC state.
+- The client reported the candidate working in the external engine integration.
 - All eight SDK variants were rebuilt and packaged, then tested from a fresh ZIP
   extraction: 24 external consumer executions and eight object/export checks.
 - Incompatible CRT selections and unknown variants were rejected. Source isolation,
@@ -106,6 +110,11 @@ Build ID: `9bb1dc2ac56c4008902fafab5d53322f`. Local evidence (ignored build arti
 
 - `build/logs/release-2.1.0-source-results.json`, with matching Debug/Release
   `-build.log`, `-tests.log` and `-tests.xml` files.
+- `build/logs/release-2.1.0-final-gates.json`, `release-2.1.0-Profile-build.log`,
+  `release-2.1.0-Profile-tests.log`, `release-2.1.0-allocation-self-test.log` and
+  `release-2.1.0-hot-reload-self-test.log` record the final automated checks.
+- `build/logs/release-2.1.0-finalization/result.json` verifies the final ZIP,
+  checksum and unchanged validated payload after finalizing these notes.
 - `build/logs/release-2.1.0-sdk-build-and-validation.log` records the temporary
   consumer build directory and the complete package validation.
 - `build/logs/release-2.1.0-sdk-audit.json` records archive/payload checks and
@@ -117,6 +126,6 @@ Debug/Release plain/instrumented matrix (335/326 tests per configuration) and
 Windows clang-cl C11 consumers in both full and none modes. These are Windows
 results, not native Linux validation.
 
-Native Linux validation, comparative performance profiling and final client-engine
-integration of this candidate remain pending. Hot reload requires client-owned
-loading, lifetime management and synchronization, as in previous releases.
+Native Linux validation and comparative performance profiling remain pending.
+Hot reload requires client-owned loading, lifetime management and synchronization,
+as in previous releases.
