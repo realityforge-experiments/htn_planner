@@ -1,0 +1,20 @@
+// Copyright (c) 2026 Jose Antonio Escribano.
+(:domain SharedBase base
+    (:axiom (choose_value ?inp_value ?out_value) base
+        (and (= ?out_value ?inp_value)))
+    (:method (choose) base (zero () ((!base_zero))))
+    (:method (choose ?inp_value) base (one () ((!base_one ?inp_value))))
+    (:method (shared ?inp_value)
+        (one (and (= ?payload (payload ?inp_value (call echo ?inp_value))))
+            ((!shared ?payload))))
+    (:method (report_error)
+        (one (and (call missing_shared_callterm)) ((!unexpected))))
+    (:method (unused) (one () ((!unused))))
+    (:axiom (unused_value ?out_value)
+        (and (unused_fact ?out_value) (call unused_condition ?out_value)))
+    (:method (unused_with_helpers)
+        (one (and (#unused_value ?value) (> ?value 0))
+            ((!unused (+ ?value 1) (call unused_argument ?value)))))
+    (:method (shared ?inp_left ?inp_right)
+        (unused_overload () ((!unused_pair ?inp_left ?inp_right))))
+)

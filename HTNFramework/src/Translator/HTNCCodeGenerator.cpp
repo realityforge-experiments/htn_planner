@@ -9,6 +9,7 @@
 #include "WorldState/HTNGeneratedWorldState.h"
 #include "Translator/HTNCallTermBridge.h"
 #include "Translator/HTNCompilerIRBuilder.h"
+#include "Translator/HTNCompilerReachability.h"
 
 #include <algorithm>
 #include <array>
@@ -123,25 +124,77 @@ const char* BuiltinComparisonOperatorCName(const uint32 inOperator)
 }
 
 
+// Categories are selected by the emitter, never inferred by parsing generated C.
+// All streams append to the same source in order; disabled streams only count.
+class CodeOutput final : public std::ostream
+{
+    class Buffer final : public std::streambuf
+    {
+    public:
+        Buffer(std::string& inSource, HTNGeneratedCodeSize& inSize, bool inEnabled)
+            : Source(inSource), Size(inSize), Enabled(inEnabled) {}
+
+    protected:
+        std::streamsize xsputn(const char* inText, std::streamsize inCount) override
+        {
+            Size.Bytes += static_cast<uint64_t>(inCount);
+            Size.LineBreaks += static_cast<uint64_t>(std::count(inText, inText + inCount, '\n'));
+            if (Enabled) Source.append(inText, static_cast<size_t>(inCount));
+            return inCount;
+        }
+        int_type overflow(int_type inCharacter) override
+        {
+            if (traits_type::eq_int_type(inCharacter, traits_type::eof()))
+                return traits_type::not_eof(inCharacter);
+            const char Character = traits_type::to_char_type(inCharacter);
+            xsputn(&Character, 1);
+            return inCharacter;
+        }
+
+    private:
+        std::string& Source;
+        HTNGeneratedCodeSize& Size;
+        bool Enabled;
+    } OutputBuffer;
+
+public:
+    CodeOutput(std::string& inSource, HTNGeneratedCodeSize& inSize, bool inEnabled)
+        : std::ostream(nullptr), OutputBuffer(inSource, inSize, inEnabled)
+    {
+        rdbuf(&OutputBuffer);
+    }
+};
+
 class CodeWriter
 {
 public:
+    explicit CodeWriter(HTNGeneratedInstrumentation inMode)
+        : Out(Source, Statistics.Logic, true),
+          Debug(Source, inMode == HTNGeneratedInstrumentation::Full ? Statistics.Debugger : Statistics.OmittedDebugger,
+              inMode == HTNGeneratedInstrumentation::Full),
+          Profile(Source, inMode == HTNGeneratedInstrumentation::Full ? Statistics.Profiling : Statistics.OmittedProfiling,
+              inMode == HTNGeneratedInstrumentation::Full) {}
+
     uint32 NewLabel() { return NextLabel++; }
     std::string Label(uint32 inLabel) const { return "__label" + std::to_string(inLabel); }
     void DomainExpressionComment(const std::string& inExpression, const char* inIndent = "    ")
     {
         if (inExpression.empty())
             return;
-        Out << inIndent << "// ";
+        Debug << inIndent << "// ";
         for (const char Character : inExpression)
         {
-            if (Character == '\n') Out << "\\n";
-            else if (Character == '\r') Out << "\\r";
-            else Out << Character;
+            if (Character == '\n') Debug << "\\n";
+            else if (Character == '\r') Debug << "\\r";
+            else Debug << Character;
         }
-        Out << "\n";
+        Debug << "\n";
     }
-    std::ostringstream Out;
+    std::string Source;
+    HTNGeneratedCodeStatistics Statistics;
+    CodeOutput Out;
+    CodeOutput Debug;
+    CodeOutput Profile;
     uint32 NextLabel=1;
 };
 
@@ -408,8 +461,8 @@ void EmitGeneratedSetMoveIfChanged(CodeWriter& W, const uint32 inSlot, const std
 
 void EmitGeneratedCheckpointPush(CodeWriter& W, const GeneratedCheckpointPlan& inPlan, const char* inIndent = "    ")
 {
-    W.Out << inIndent << "HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
-    W.Out << inIndent << "HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_CHECKPOINT_PUSH);\n";
+    W.Profile << inIndent << "HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
+    W.Profile << inIndent << "HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_CHECKPOINT_PUSH);\n";
     for (const uint32 Slot : inPlan.SavedSlots)
     {
         const std::string Saved = "environment_checkpoint_" + std::to_string(inPlan.Id) + "_slot_" + std::to_string(Slot);
@@ -418,13 +471,13 @@ void EmitGeneratedCheckpointPush(CodeWriter& W, const GeneratedCheckpointPlan& i
         W.Out << inIndent << "  if (checkpoint_value) HTNAtom_Copy(&" << Saved << ", checkpoint_value);\n";
         W.Out << inIndent << "  else HTNAtom_Init(&" << Saved << "); }\n";
     }
-    W.Out << inIndent << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
+    W.Profile << inIndent << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
 }
 
 void EmitGeneratedCheckpointRollback(CodeWriter& W, const GeneratedCheckpointPlan& inPlan, const char* inIndent = "    ")
 {
-    W.Out << inIndent << "HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
-    W.Out << inIndent << "HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_CHECKPOINT_ROLLBACK);\n";
+    W.Profile << inIndent << "HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
+    W.Profile << inIndent << "HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_CHECKPOINT_ROLLBACK);\n";
     for (const uint32 Slot : inPlan.SavedSlots)
     {
         const std::string Saved = "environment_checkpoint_" + std::to_string(inPlan.Id) + "_slot_" + std::to_string(Slot);
@@ -435,16 +488,16 @@ void EmitGeneratedCheckpointRollback(CodeWriter& W, const GeneratedCheckpointPla
         W.Out << inIndent << "}\n";
         W.Out << inIndent << "HTNAtom_Destroy(&" << Saved << ");\n";
     }
-    W.Out << inIndent << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
+    W.Profile << inIndent << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
 }
 
 void EmitGeneratedCheckpointCommit(CodeWriter& W, const GeneratedCheckpointPlan& inPlan, const char* inIndent = "    ")
 {
-    W.Out << inIndent << "HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
-    W.Out << inIndent << "HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_CHECKPOINT_COMMIT);\n";
+    W.Profile << inIndent << "HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
+    W.Profile << inIndent << "HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_CHECKPOINT_COMMIT);\n";
     for (const uint32 Slot : inPlan.SavedSlots)
         W.Out << inIndent << "HTNAtom_Destroy(&environment_checkpoint_" << inPlan.Id << "_slot_" << Slot << ");\n";
-    W.Out << inIndent << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
+    W.Profile << inIndent << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CHOICE_BACKTRACK);\n";
 }
 
 std::string GetGeneratedFactChoiceHelperName(const std::string& inDomainSymbol, const uint32 inConditionIndex)
@@ -822,20 +875,20 @@ void EmitGeneratedFactChoiceHelper(CodeWriter& W, const HTNCompilerIR& B,
     if (Condition.ArgumentCount > 0u)
         W.Out << "    const HTNAtom* fact_arguments[" << Condition.ArgumentCount << "u];\n";
     W.Out << "    uint32_t solution_index = 0u;\n";
-    W.Out << "    HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_QUERY);\n";
-    W.Out << "    HTN_GENERATED_STRUCTURAL_EVENT(context, target_solution == 0u ? HTN_GENERATED_STRUCTURAL_FACT_CHOICE_POINT : HTN_GENERATED_STRUCTURAL_FACT_CHOICE_RETRY);\n";
-    W.Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_FACT_CURSOR_SETUP);\n";
-    W.Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_FACT);\n";
-    W.Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_WORLDSTATE_COUNT);\n";
+    W.Profile << "    HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_QUERY);\n";
+    W.Profile << "    HTN_GENERATED_STRUCTURAL_EVENT(context, target_solution == 0u ? HTN_GENERATED_STRUCTURAL_FACT_CHOICE_POINT : HTN_GENERATED_STRUCTURAL_FACT_CHOICE_RETRY);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_FACT_CURSOR_SETUP);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_FACT);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_WORLDSTATE_COUNT);\n";
     if (Condition.ResolvedIndex == kNoIndex) { B.SetError("Generated fact choice has no compile-time fact slot"); return; }
     W.Out << "    " << BuildGeneratedFactCursorBegin(B, Condition, "fact_cursor") << ";\n";
-    W.Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_WORLDSTATE_COUNT);\n";
-    W.Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_FACT);\n";
-    W.Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_CURSOR_SETUP);\n";
-    W.Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_WORLDSTATE_COUNT);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_FACT);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_CURSOR_SETUP);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
     W.Out << "    while (HTNWorldState_NextGeneratedFactRow(&fact_cursor, "
           << (Condition.ArgumentCount > 0u ? "fact_arguments" : "NULL") << ")) {\n";
-    W.Out << "        HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_ROW_TESTED);\n";
+    W.Profile << "        HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_ROW_TESTED);\n";
 
     std::unordered_map<uint32, uint32> FirstVariableArgument;
     for (uint32 I = 0; I < Condition.ArgumentCount; ++I)
@@ -870,7 +923,7 @@ void EmitGeneratedFactChoiceHelper(CodeWriter& W, const HTNCompilerIR& B,
         }
     }
 
-    W.Out << "        HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_ROW_MATCHED);\n";
+    W.Profile << "        HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_ROW_MATCHED);\n";
     W.Out << "        if (solution_index++ != target_solution) continue;\n";
     for (const auto& Pair : FirstVariableArgument)
     {
@@ -883,10 +936,10 @@ void EmitGeneratedFactChoiceHelper(CodeWriter& W, const HTNCompilerIR& B,
                                      "fact_arguments[" + std::to_string(Argument) + "u]", "            ");
         W.Out << "        }\n";
     }
-    W.Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
     W.Out << "        return 1;\n";
     W.Out << "    }\n";
-    W.Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
     W.Out << "    return 0;\n}\n\n";
 }
 
@@ -915,20 +968,20 @@ void EmitDirectDeterministicFact(CodeWriter& W, const HTNCompilerIR& B, const ui
     if (Condition.ArgumentCount > 0u)
         W.Out << "        const HTNAtom* fact_arguments[" << Condition.ArgumentCount << "u];\n";
     W.Out << "        int fact_matched = 0;\n";
-    W.Out << "        HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_QUERY);\n";
-    W.Out << "        HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
-    W.Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_FACT_CURSOR_SETUP);\n";
-    W.Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_FACT);\n";
-    W.Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_WORLDSTATE_COUNT);\n";
+    W.Profile << "        HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_QUERY);\n";
+    W.Debug << "        HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_FACT_CURSOR_SETUP);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_FACT);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_WORLDSTATE_COUNT);\n";
     W.Out << "        " << BuildGeneratedFactCursorBegin(B, Condition, "fact_cursor") << ";\n";
-    W.Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_WORLDSTATE_COUNT);\n";
-    W.Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_FACT);\n";
-    W.Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_CURSOR_SETUP);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_WORLDSTATE_COUNT);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_FACT);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_CURSOR_SETUP);\n";
     W.Out << "        {\n";
-    W.Out << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
+    W.Profile << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
     W.Out << "            while (HTNWorldState_NextGeneratedFactRow(&fact_cursor, "
           << (Condition.ArgumentCount > 0u ? "fact_arguments" : "NULL") << ")) {\n";
-    W.Out << "                HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_ROW_TESTED);\n";
+    W.Profile << "                HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_ROW_TESTED);\n";
 
     std::unordered_map<uint32, uint32> FirstUnboundVariableArgument;
     for (uint32 I = 0; I < Condition.ArgumentCount; ++I)
@@ -964,7 +1017,7 @@ void EmitDirectDeterministicFact(CodeWriter& W, const HTNCompilerIR& B, const ui
         }
     }
 
-    W.Out << "                HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_ROW_MATCHED);\n";
+    W.Profile << "                HTN_GENERATED_STRUCTURAL_EVENT(context, HTN_GENERATED_STRUCTURAL_FACT_ROW_MATCHED);\n";
     for (const auto& Pair : FirstUnboundVariableArgument)
     {
         const uint32 Argument = Pair.second;
@@ -975,9 +1028,9 @@ void EmitDirectDeterministicFact(CodeWriter& W, const HTNCompilerIR& B, const ui
     W.Out << "                fact_matched = 1;\n";
     W.Out << "                break;\n";
     W.Out << "            }\n";
-    W.Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
+    W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_FACT_SCAN_UNIFY);\n";
     W.Out << "        }\n";
-    W.Out << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION"
+    W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION"
           << ", " << inCondition << "u, fact_matched, 0);\n";
     W.Out << "        if (fact_matched) goto " << W.Label(inSuccess) << ";\n";
     W.Out << "        goto " << W.Label(inFailure) << ";\n";
@@ -995,6 +1048,120 @@ void EmitGeneratedCallTermSource(CodeWriter& W, const HTNCompilerIR& B,
     W.Out << ", " << inSource.Range.Begin.Line << "u, " << inSource.Range.Begin.Column << "u};\n";
 }
 
+// Recursion here is translation-time tree traversal, not generated planner recursion.
+// Every emitted child owns its atom and is destroyed in the same lexical block.
+void EmitGeneratedOwnedValue(CodeWriter& W, const HTNCompilerIR& B, const ValueRecord& Value,
+                             const std::string& Domain, const std::string& Target,
+                             const std::string& Valid, const std::string& Indent, uint32& Temporary)
+{
+    const std::string Expression = B.Strings.Values[Value.DebugText];
+    const std::string File = Value.Source.FileIndex < B.SourceFiles.size() ? B.SourceFiles[Value.Source.FileIndex] : "<domain>";
+    const std::string Location = " Source: " + File + ":" + std::to_string(Value.Source.Range.Begin.Line) + ":" +
+        std::to_string(Value.Source.Range.Begin.Column) + " (domain '" + B.DomainId + "').";
+    const auto Error = [&](const std::string& Message) {
+        W.Out << Indent << "    if (!" << Valid << ") HTN_GENERATED_EXECUTION(context)->execution_info.last_error = \""
+              << EscapeCString(Message + Location) << "\";\n";
+    };
+    W.Out << Indent << "if (" << Valid << ") {\n";
+    if (Value.Kind == HTNIRValueKind::RuntimeList)
+    {
+        W.Out << Indent << "    HTNAtom_SetEmptyList(" << Target << ");\n";
+        for (const auto& Child : B.RuntimeExpressions[Value.RuntimeExpression].Children)
+        {
+            const std::string Name = "list_element_" + std::to_string(Temporary++);
+            W.Out << Indent << "    { HTNAtom " << Name << "; HTNAtom_Init(&" << Name << ");\n";
+            EmitGeneratedOwnedValue(W, B, Child, Domain, "&" + Name, Valid, Indent + "        ", Temporary);
+            W.Out << Indent << "        if (" << Valid << ") {\n";
+            W.Out << Indent << "            " << Valid << " = HTNAtom_PushBackListElementMove(" << Target << ", &" << Name << ");\n";
+            Error("Unable to allocate runtime list element '" + B.Strings.Values[Child.DebugText] + "'.");
+            W.Out << Indent << "        }\n";
+            W.Out << Indent << "        HTNAtom_Destroy(&" << Name << "); }\n";
+        }
+    }
+    else if (Value.Kind == HTNIRValueKind::Call || Value.Kind == HTNIRValueKind::Arithmetic)
+    {
+        const bool Call = Value.Kind == HTNIRValueKind::Call;
+        const auto& Children = Call ? B.RuntimeExpressions[Value.RuntimeExpression].Children :
+            B.ArithmeticExpressions[Value.ArithmeticExpression].Operands;
+        const std::string Name = "list_arguments_" + std::to_string(Temporary++);
+        W.Out << Indent << "    HTNAtom " << Name << "[" << std::max<size_t>(1u, Children.size()) << "u];\n";
+        W.Out << Indent << "    const HTNAtom* " << Name << "_refs[" << std::max<size_t>(1u, Children.size()) << "u] = {";
+        for (size_t I = 0; I < Children.size(); ++I) W.Out << (I ? ", " : "") << "&" << Name << "[" << I << "u]";
+        if (Children.empty()) W.Out << "NULL";
+        W.Out << "};\n";
+        W.Out << Indent << "    uint32_t " << Name << "_i;\n";
+        // A one-element unused array for zero-argument calls also gets initialized/destroyed.
+        W.Out << Indent << "    for (" << Name << "_i = 0u; " << Name << "_i < " << std::max<size_t>(1u, Children.size())
+              << "u; ++" << Name << "_i) HTNAtom_Init(&" << Name << "[" << Name << "_i]);\n";
+        for (size_t I = 0; I < Children.size(); ++I)
+        {
+            EmitGeneratedOwnedValue(W, B, Children[I], Domain, "&" + Name + "[" + std::to_string(I) + "u]", Valid, Indent + "    ", Temporary);
+            if (!Call)
+            {
+                const std::string Operand = Name + "[" + std::to_string(I) + "u]";
+                W.Out << Indent << "    if (" << Valid << ") {\n";
+                W.Out << Indent << "        " << Valid << " = " << Operand << ".type == HTN_ATOM_TYPE_INT || " << Operand << ".type == HTN_ATOM_TYPE_FLOAT;\n";
+                Error("Runtime list arithmetic operand '" + B.Strings.Values[Children[I].DebugText] + "' is not numeric.");
+                W.Out << Indent << "    }\n";
+            }
+        }
+        W.Out << Indent << "    if (" << Valid << ") {\n";
+        if (Call)
+        {
+            EmitGeneratedCallTermSource(W, B, Value.Source, Name + "_source");
+            W.Profile << Indent << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
+            W.Out << Indent << "        " << Valid << " = HTNCallTermRegistry_InvokeGeneratedCallTermWithSource(context, &HTN_GENERATED_EXECUTION(context)->callterm_slots["
+                  << B.RuntimeExpressions[Value.RuntimeExpression].CallTermSlot << "u], " << Name << "_refs, " << Children.size()
+                  << "u, " << Target << ", &" << Name << "_source);\n";
+            W.Profile << Indent << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
+            Error("Callterm '" + B.Strings.Values[Value.Text] + "' failed while constructing a runtime list.");
+            W.Out << Indent << "        { const uint64_t generation = HTNWorldState_GetFactStorageGeneration(context->world_state);\n";
+            W.Out << Indent << "          if (HTN_GENERATED_EXECUTION(context)->fact_storage_generation != generation) {\n";
+            W.Out << Indent << "              if (!" << Domain << "_PREPARE_FACTS(HTN_GENERATED_EXECUTION(context)->fact_slots, context->world_state, context->prepared_storage)) {\n";
+            W.Out << Indent << "                  " << Valid << " = 0; HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_PREPARATION_FAILED;\n";
+            W.Out << Indent << "              } else HTN_GENERATED_EXECUTION(context)->fact_storage_generation = generation;\n";
+            W.Out << Indent << "          } }\n";
+        }
+        else
+        {
+            W.Out << Indent << "        " << Valid << " = " << Domain << "_EVALUATE_ARITHMETIC(" << Name << "_refs, " << Children.size()
+                  << "u, " << static_cast<uint32>(B.ArithmeticExpressions[Value.ArithmeticExpression].Operator) << "u, " << Target << ");\n";
+            Error("Arithmetic expression '" + Expression + "' failed while constructing a runtime list.");
+        }
+        W.Out << Indent << "    }\n";
+        W.Out << Indent << "    for (" << Name << "_i = 0u; " << Name << "_i < " << std::max<size_t>(1u, Children.size())
+              << "u; ++" << Name << "_i) HTNAtom_Destroy(&" << Name << "[" << Name << "_i]);\n";
+    }
+    else
+    {
+        std::string Reference;
+        if (Value.Kind == HTNIRValueKind::Variable)
+            Reference = Value.VariableSlot == kNoIndex ? "NULL" :
+                "HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, " + std::to_string(Value.VariableSlot) + "u)";
+        else if (Value.Kind == HTNIRValueKind::Constant)
+        {
+            const auto It = std::find_if(B.Constants.begin(), B.Constants.end(),
+                [&](const auto& Constant) { return Constant.Id == Value.Text; });
+            if (It == B.Constants.end())
+            {
+                B.SetError(File + "(" + std::to_string(Value.Source.Range.Begin.Line) + "," +
+                    std::to_string(Value.Source.Range.Begin.Column) + "): error: Unknown constant '" + Expression + "' in runtime list");
+                Reference = "NULL";
+            }
+            else Reference = BuildGeneratedValueAtomReference(B, It->Value, Domain);
+        }
+        else Reference = "&" + Domain + "_PREPARED(context)->values[" + std::to_string(Value.StaticValueIndex) + "u]";
+        W.Out << Indent << "    const HTNAtom* element = " << Reference << ";\n";
+        W.Out << Indent << "    " << Valid << " = element && HTNAtom_IsBound(element);\n";
+        Error("Runtime list element '" + Expression + "' is unbound.");
+        W.Out << Indent << "    if (" << Valid << ") {\n";
+        W.Out << Indent << "        " << Valid << " = HTNAtom_AssignCopy(" << Target << ", element);\n";
+        Error("Unable to copy runtime list element '" + Expression + "'.");
+        W.Out << Indent << "    }\n";
+    }
+    W.Out << Indent << "}\n";
+}
+
 void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uint32 inCondition,
                               const BoundVariableSet& inBound,
                               const uint32 inSuccess, const uint32 inFailure,
@@ -1008,10 +1175,17 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
     {
         const auto& Output = B.Values[Condition.OutputValue];
         const auto& Input = B.Values[Condition.FirstArgument];
-        W.Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
         W.Out << "    {\n";
         uint32 Temporary = 0u;
-        const std::string Reference = Input.Kind == HTNIRValueKind::Arithmetic
+        const bool RuntimeList = Input.Kind == HTNIRValueKind::RuntimeList;
+        if (RuntimeList)
+        {
+            W.Out << "        HTNAtom runtime_list; HTNAtom_Init(&runtime_list);\n";
+            W.Out << "        int list_valid = HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, " << Output.VariableSlot << "u) == NULL;\n";
+            EmitGeneratedOwnedValue(W, B, Input, inDomainSymbol, "&runtime_list", "list_valid", "        ", Temporary);
+        }
+        const std::string Reference = RuntimeList ? "(list_valid ? &runtime_list : NULL)" : Input.Kind == HTNIRValueKind::Arithmetic
             ? EmitGeneratedArithmeticValue(W, B, Input, inDomainSymbol, "assignment_" + std::to_string(inCondition), "        ", Temporary)
             : BuildGeneratedValueAtomReference(B, Condition.FirstArgument, inDomainSymbol);
         W.Out << "        const HTNAtom* assignment_value = " << Reference << ";\n";
@@ -1020,7 +1194,8 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
         W.Out << "            condition_result = HTNAtom_AssignCopy(&HTN_GENERATED_EXECUTION(context)->variables.values[" << Output.VariableSlot << "u], assignment_value);\n";
         W.Out << "            if (condition_result) HTN_GENERATED_EXECUTION(context)->variables.bound_mask[" << (Output.VariableSlot >> 6u) << "u] |= (UINT64_C(1) << " << (Output.VariableSlot & 63u) << "u);\n";
         W.Out << "        }\n";
-        W.Out << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, condition_result, 0);\n";
+        if (RuntimeList) W.Out << "        HTNAtom_Destroy(&runtime_list);\n";
+        W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, condition_result, 0);\n";
         W.Out << "        if (condition_result) goto " << W.Label(inSuccess) << ";\n";
         W.Out << "        goto " << W.Label(inFailure) << ";\n    }\n";
         return;
@@ -1032,15 +1207,15 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
         bool StaticResult = false;
         if (TryEvaluateStaticBuiltinComparison(B, Condition, StaticResult))
         {
-            W.Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
-            W.Out << "    HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition
+            W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
+            W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition
                   << "u, " << (StaticResult ? "1" : "0") << ", 0);\n";
             W.Out << "    goto " << W.Label(StaticResult ? inSuccess : inFailure) << ";\n";
             return;
         }
 
 
-        W.Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition
               << "u, 0);\n";
 
         uint32 ArithmeticTemporary = 0u;
@@ -1059,14 +1234,14 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
               << BuiltinComparisonOperatorCName(Condition.Id) << ")) {\n";
 
 
-        W.Out << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition
+        W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition
               << "u, 1, 0);\n";
 
         W.Out << "        goto " << W.Label(inSuccess) << ";\n";
         W.Out << "    }\n";
 
 
-        W.Out << "    HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition
               << "u, 0, 0);\n";
 
         W.Out << "    goto " << W.Label(inFailure) << ";\n";
@@ -1089,7 +1264,7 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
             ? "HTN_ATOM_LIST_SPLIT_BACK"
             : "HTN_ATOM_LIST_SPLIT_FRONT";
 
-        W.Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
         W.Out << "    {\n";
         W.Out << "        const HTNAtom* split_list_value = " << ListReference << ";\n";
         W.Out << "        HTNAtom split_element;\n";
@@ -1150,7 +1325,7 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
         W.Out << "        }\n";
         W.Out << "        HTNAtom_Destroy(&split_element);\n";
         W.Out << "        HTNAtom_Destroy(&split_remainder);\n";
-        W.Out << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, split_valid, 0);\n";
+        W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, split_valid, 0);\n";
         W.Out << "        if (split_valid) goto " << W.Label(inSuccess) << ";\n";
         W.Out << "        goto " << W.Label(inFailure) << ";\n";
         W.Out << "    }\n";
@@ -1162,7 +1337,7 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
         return;
     }
 
-    W.Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
+    W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0);\n";
     W.Out << "    {\n";
     if (Condition.ArgumentCount > 0u)
     {
@@ -1191,28 +1366,37 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
     case HTN_CONDITION_CALL:
     {
         if (Condition.ResolvedIndex >= B.CallTermStringIds.size()) { B.SetError("Generated callterm condition has invalid callterm slot"); return; }
-        W.Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
+        W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
         W.Out << "        HTNAtom call_result;\n";
         W.Out << "        HTNAtom_Init(&call_result);\n";
-        W.Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
+        W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
         EmitGeneratedCallTermSource(W, B, Condition.Source, "call_source");
         W.Out << "        const int call_has_result = HTNCallTermRegistry_InvokeGeneratedCallTermWithSource(context, &HTN_GENERATED_EXECUTION(context)->callterm_slots["
               << Condition.ResolvedIndex << "u], " << Args << ", " << Condition.ArgumentCount << "u, &call_result, &call_source);\n";
-        W.Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
+        W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
+        W.Out << "        if (call_has_result && call_result.type != HTN_ATOM_TYPE_BOOL) {\n";
+        W.Out << "            const HTNCallTermErrorInfo error = {\n";
+        W.Out << "                HTN_GENERATED_EXECUTION(context)->callterm_slots[" << Condition.ResolvedIndex
+              << "u].name, HTN_CALLTERM_ERROR_NON_BOOLEAN_CONDITION_RESULT, NULL, call_source,\n";
+        W.Out << "                UINT32_MAX, UINT32_MAX, " << Condition.ArgumentCount
+              << "u, HTN_ATOM_TYPE_BOOL, (uint32_t)call_result.type, \"bool\"\n";
+        W.Out << "            };\n";
+        W.Out << "            HTNCallTerm_ReportError(context->callterm_error_policy, context->callterm_error_callback, context->client_context, &error);\n";
+        W.Out << "        }\n";
         W.Out << "        { const uint64_t fact_storage_generation = HTNWorldState_GetFactStorageGeneration(context->world_state);\n";
         W.Out << "          if (HTN_GENERATED_EXECUTION(context)->fact_storage_generation != fact_storage_generation) {\n";
         W.Out << "              if (!" << inDomainSymbol << "_PREPARE_FACTS(HTN_GENERATED_EXECUTION(context)->fact_slots, context->world_state, context->prepared_storage)) {\n";
         W.Out << "                  HTNAtom_Destroy(&call_result);\n";
         W.Out << "                  HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_PREPARATION_FAILED;\n";
-        W.Out << "                  HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0, 0);\n";
-        W.Out << "                  HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
+        W.Debug << "                  HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0, 0);\n";
+        W.Profile << "                  HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
         W.Out << "                  return 0;\n";
         W.Out << "              }\n";
         W.Out << "              HTN_GENERATED_EXECUTION(context)->fact_storage_generation = fact_storage_generation;\n";
         W.Out << "          } }\n";
         W.Out << "        const int condition_result = call_has_result && call_result.type == HTN_ATOM_TYPE_BOOL && call_result.value.bool_value != 0u;\n";
         W.Out << "        HTNAtom_Destroy(&call_result);\n";
-        W.Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
+        W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
         break;
     }
     case HTN_CONDITION_CALL_BIND:
@@ -1220,23 +1404,23 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
         if (Condition.ResolvedIndex >= B.CallTermStringIds.size()) { B.SetError("Generated call-bind condition has invalid callterm slot"); return; }
         if (Condition.OutputValue == kNoIndex || Condition.OutputValue >= B.Values.size() || B.Values[Condition.OutputValue].Kind != HTNIRValueKind::Variable) { B.SetError("Generated call-bind output is not a variable"); return; }
         const ValueRecord& Output = B.Values[Condition.OutputValue];
-        W.Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
+        W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
         W.Out << "        int condition_result = HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, " << Output.VariableSlot << "u) == NULL;\n";
         W.Out << "        if (condition_result) {\n";
         W.Out << "            HTNAtom call_result;\n";
         W.Out << "            HTNAtom_Init(&call_result);\n";
-        W.Out << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
+        W.Profile << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
         EmitGeneratedCallTermSource(W, B, Condition.Source, "call_source");
         W.Out << "            condition_result = HTNCallTermRegistry_InvokeGeneratedCallTermWithSource(context, &HTN_GENERATED_EXECUTION(context)->callterm_slots["
               << Condition.ResolvedIndex << "u], " << Args << ", " << Condition.ArgumentCount << "u, &call_result, &call_source);\n";
-        W.Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
+        W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
         W.Out << "            { const uint64_t fact_storage_generation = HTNWorldState_GetFactStorageGeneration(context->world_state);\n";
         W.Out << "              if (HTN_GENERATED_EXECUTION(context)->fact_storage_generation != fact_storage_generation) {\n";
         W.Out << "                  if (!" << inDomainSymbol << "_PREPARE_FACTS(HTN_GENERATED_EXECUTION(context)->fact_slots, context->world_state, context->prepared_storage)) {\n";
         W.Out << "                      HTNAtom_Destroy(&call_result);\n";
         W.Out << "                      HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_PREPARATION_FAILED;\n";
-        W.Out << "                      HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0, 0);\n";
-        W.Out << "                      HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
+        W.Debug << "                      HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition << "u, 0, 0);\n";
+        W.Profile << "                      HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
         W.Out << "                      return 0;\n";
         W.Out << "                  }\n";
         W.Out << "                  HTN_GENERATED_EXECUTION(context)->fact_storage_generation = fact_storage_generation;\n";
@@ -1245,14 +1429,14 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
         EmitGeneratedSetMoveIfChanged(W, Output.VariableSlot, "&call_result", "");
         W.Out << "            HTNAtom_Destroy(&call_result);\n";
         W.Out << "        }\n";
-        W.Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
+        W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_CALL_CONTROL);\n";
         break;
     }
     default:
         B.SetError("HTNTranslator attempted to emit an unsupported generated-condition fallback for condition " + std::to_string(inCondition));
         return;
     }
-    W.Out << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION"
+    W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION"
           << ", " << inCondition << "u, condition_result, 0);\n";
     W.Out << "        if (condition_result) goto " << W.Label(inSuccess) << ";\n";
     W.Out << "        goto " << W.Label(inFailure) << ";\n";
@@ -1280,7 +1464,7 @@ void EmitCondition(CodeWriter& W, const HTNCompilerIR& B, uint32 inCondition, ui
 }
 
 template<typename T, typename Writer>
-void WriteArray(std::ostringstream& out, const char* type, const std::string& name, const std::vector<T>& values, Writer writer)
+void WriteArray(std::ostream& out, const char* type, const std::string& name, const std::vector<T>& values, Writer writer)
 {
     const size_t Count = values.empty() ? 1u : values.size();
     out << "static const " << type << " " << name << "[" << Count << "] = {\n";
@@ -1289,45 +1473,34 @@ void WriteArray(std::ostringstream& out, const char* type, const std::string& na
     out << "};\n\n";
 }
 
-bool NeedsGeneratedArithmeticHelper(const HTNCompilerIR& inBuilder)
-{
-    if (std::any_of(inBuilder.Values.begin(), inBuilder.Values.end(),
-        [](const ValueRecord& Value) { return Value.Kind == HTNIRValueKind::Arithmetic; }))
-        return true;
-
-    for (const auto& TaskCalls : inBuilder.TaskCallExpressions)
-        for (const TaskCallExpressionRecord& Call : TaskCalls)
-            if (std::any_of(Call.Arguments.begin(), Call.Arguments.end(),
-                [](const ValueRecord& Value) { return Value.Kind == HTNIRValueKind::Arithmetic; }))
-                return true;
-    return false;
-}
-
 std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const std::string& EntryPointName,
                        const std::string& SourceFile, const std::vector<std::string>& LinkedSourceFiles,
                        const HTNGeneratedBacktrackingPolicy inBacktrackingPolicy,
                        const HTNGeneratedRuntimeBacktrackingSupport inRuntimeBacktrackingSupport,
                        const uint32 inBacktrackingCapacity,
-                       const uint32 inCallFrameCapacity)
+                       const uint32 inCallFrameCapacity,
+                       const HTNGeneratedInstrumentation inInstrumentation,
+                       HTNGeneratedCodeStatistics& outStatistics)
 {
-    CodeWriter W;
+    CodeWriter W(inInstrumentation);
     auto& Out = W.Out;
     const std::string DomainSymbol = Prefix + "_DOMAIN";
-    const bool NeedsArithmeticHelper = NeedsGeneratedArithmeticHelper(B);
+    const auto Reachable = HTNAnalyzeCompilerReachability(B);
+    const bool NeedsArithmeticHelper = Reachable.NeedsArithmetic;
     Out << "/* Generated by HTNTranslator. Do not edit. */\n";
-    Out << "/* Source domain: " << EscapeCString(SourceFile) << " */\n";
+    W.Debug << "/* Source domain: " << EscapeCString(SourceFile) << " */\n";
     if (LinkedSourceFiles.size() > 1u)
     {
-        Out << "/* Linked domain sources:\n";
+        W.Debug << "/* Linked domain sources:\n";
         for (const std::string& LinkedSource : LinkedSourceFiles)
-            Out << " *   " << EscapeCString(LinkedSource) << "\n";
-        Out << " */\n";
+            W.Debug << " *   " << EscapeCString(LinkedSource) << "\n";
+        W.Debug << " */\n";
     }
     Out << "#include \"Translator/HTNGeneratedPlanner.h\"\n";
     if (inBacktrackingPolicy == HTNGeneratedBacktrackingPolicy::FixedWithOverflow)
         Out << "#include \"Translator/HTNGeneratedBacktracking.h\"\n";
-    Out << "#include \"Translator/HTNGeneratedProfiling.h\"\n";
-    Out << "#include \"Translator/HTNGeneratedDebug.h\"\n";
+    W.Profile << "#include \"Translator/HTNGeneratedProfiling.h\"\n";
+    W.Debug << "#include \"Translator/HTNGeneratedDebug.h\"\n";
     Out << "#include \"Core/HtnSymbolGenerated.h\"\n";
     Out << "#include \"WorldState/HTNGeneratedWorldState.h\"\n";
     Out << "#include \"Translator/HTNCallTermBridge.h\"\n";
@@ -1357,12 +1530,12 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     if (NeedsArithmeticHelper)
         Out << "static int " << DomainSymbol << "_EVALUATE_ARITHMETIC(const HTNAtom* const* operands, uint32_t count, uint32_t op, HTNAtom* result);\n\n";
 
-    Out << "#ifdef HTN_DEBUG_DECOMPOSITION\n";
+    W.Debug << "#ifdef HTN_DEBUG_DECOMPOSITION\n";
     const size_t DebugStringCount = B.Strings.Values.empty() ? 1u : B.Strings.Values.size();
-    Out << "static const char* const " << Prefix << "_DEBUG_STRINGS[" << DebugStringCount << "] = {\n";
-    if (B.Strings.Values.empty()) Out << "    \"\"\n"; else for (const auto& S : B.Strings.Values) Out << "    \"" << EscapeCString(S) << "\",\n";
-    Out << "};\n\n";
-    WriteArray(Out,"HTNGeneratedDebugValue",Prefix+"_DEBUG_VALUES",B.Values,[](auto& O,const auto& V){
+    W.Debug << "static const char* const " << Prefix << "_DEBUG_STRINGS[" << DebugStringCount << "] = {\n";
+    if (B.Strings.Values.empty()) W.Debug << "    \"\"\n"; else for (const auto& S : B.Strings.Values) W.Debug << "    \"" << EscapeCString(S) << "\",\n";
+    W.Debug << "};\n\n";
+    WriteArray(W.Debug,"HTNGeneratedDebugValue",Prefix+"_DEBUG_VALUES",B.Values,[](auto& O,const auto& V){
         uint32 Flags = 0u;
         if (V.Kind == HTNIRValueKind::Variable && V.DebugAsVariable) Flags |= HTN_GENERATED_DEBUG_VALUE_FLAG_VARIABLE;
         if (V.Kind == HTNIRValueKind::Literal && V.AtomType == HTN_ATOM_TYPE_STRING) Flags |= HTN_GENERATED_DEBUG_VALUE_FLAG_STRING_LITERAL;
@@ -1370,17 +1543,17 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         O<<"{"<<Flags<<"u,"<<V.DebugText<<"u,"<<V.Text<<"u,"<<V.SourceLine<<"u,"<<(V.VariableSlot==kNoIndex?"HTN_NO_INDEX":std::to_string(V.VariableSlot)+"u")<<"}";
     });
     const size_t DebugVariableSlotCount=B.VariableStringIds.empty()?1u:B.VariableStringIds.size();
-    Out << "static const uint32_t "<<Prefix<<"_DEBUG_VARIABLE_STRING_IDS["<<DebugVariableSlotCount<<"] = {";
-    if (B.VariableStringIds.empty()) Out << "0u";
+    W.Debug << "static const uint32_t "<<Prefix<<"_DEBUG_VARIABLE_STRING_IDS["<<DebugVariableSlotCount<<"] = {";
+    if (B.VariableStringIds.empty()) W.Debug << "0u";
     for (size_t I = 0; I < B.VariableStringIds.size(); ++I)
     {
-        if (I) Out << ",";
+        if (I) W.Debug << ",";
         const uint32 Id = B.VariableStringIds[I];
-        if (B.DebugInternalVariableStringIds.count(Id)) Out << "HTN_NO_INDEX";
-        else Out << Id << "u";
+        if (B.DebugInternalVariableStringIds.count(Id)) W.Debug << "HTN_NO_INDEX";
+        else W.Debug << Id << "u";
     }
-    Out << "};\n\n";
-    WriteArray(Out, "HTNGeneratedDebugCondition", Prefix + "_DEBUG_CONDITIONS", B.Conditions, [&B](auto& O, const auto& V)
+    W.Debug << "};\n\n";
+    WriteArray(W.Debug, "HTNGeneratedDebugCondition", Prefix + "_DEBUG_CONDITIONS", B.Conditions, [&B](auto& O, const auto& V)
     {
         const auto& D = V.DebugCondition == kNoIndex ? V : B.Conditions[V.DebugCondition];
         O << "{" << ConditionKindCName(D.Kind) << ","
@@ -1394,9 +1567,9 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
           << (V.DebugInternal ? "1u" : "0u") << "}";
     });
     const size_t DebugConditionChildCount=B.ConditionChildRefs.empty()?1u:B.ConditionChildRefs.size();
-    Out << "static const uint32_t "<<Prefix<<"_DEBUG_CONDITION_CHILD_REFS["<<DebugConditionChildCount<<"] = {";
-    if(B.ConditionChildRefs.empty()) Out<<"0u"; else for(size_t I=0;I<B.ConditionChildRefs.size();++I){if(I)Out<<",";Out<<B.ConditionChildRefs[I]<<"u";} Out<<"};\n\n";
-    WriteArray(Out,"HTNGeneratedDebugTask",Prefix+"_DEBUG_TASKS",B.Tasks,[&B](auto& O,const auto& V){
+    W.Debug << "static const uint32_t "<<Prefix<<"_DEBUG_CONDITION_CHILD_REFS["<<DebugConditionChildCount<<"] = {";
+    if(B.ConditionChildRefs.empty()) W.Debug<<"0u"; else for(size_t I=0;I<B.ConditionChildRefs.size();++I){if(I)W.Debug<<",";W.Debug<<B.ConditionChildRefs[I]<<"u";} W.Debug<<"};\n\n";
+    WriteArray(W.Debug,"HTNGeneratedDebugTask",Prefix+"_DEBUG_TASKS",B.Tasks,[&B](auto& O,const auto& V){
         std::string PlanStepHeadStringId = "HTN_GENERATED_NO_INDEX";
         if (V.PlanStepHeadSymbolSlot != kNoIndex)
         {
@@ -1405,28 +1578,28 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         }
         O<<"{"<<TaskKindCName(V.Kind)<<","<<V.Id<<"u,"<<V.FirstArgument<<"u,"<<V.ArgumentCount<<"u,"<<V.SourceLine<<"u,"<<PlanStepHeadStringId<<"}";
     });
-    WriteArray(Out,"HTNGeneratedDebugBranch",Prefix+"_DEBUG_BRANCHES",B.Branches,[](auto& O,const auto& V){O<<"{"<<V.Id<<"u,"<<(V.Condition==kNoIndex?"HTN_NO_INDEX":std::to_string(V.Condition)+"u")<<","<<V.FirstTask<<"u,"<<V.TaskCount<<"u,"<<V.SourceLine<<"u}";});
-    WriteArray(Out,"HTNGeneratedDebugMethod",Prefix+"_DEBUG_METHODS",B.Methods,[](auto& O,const auto& V)
+    WriteArray(W.Debug,"HTNGeneratedDebugBranch",Prefix+"_DEBUG_BRANCHES",B.Branches,[](auto& O,const auto& V){O<<"{"<<V.Id<<"u,"<<(V.Condition==kNoIndex?"HTN_NO_INDEX":std::to_string(V.Condition)+"u")<<","<<V.FirstTask<<"u,"<<V.TaskCount<<"u,"<<V.SourceLine<<"u}";});
+    WriteArray(W.Debug,"HTNGeneratedDebugMethod",Prefix+"_DEBUG_METHODS",B.Methods,[](auto& O,const auto& V)
     {
         O<<"{"<<V.Id<<"u,"<<V.FirstParameter<<"u,"<<V.ParameterCount<<"u,"<<V.FirstBranch<<"u,"<<V.BranchCount<<"u,"<<V.SourceLine<<"u,{";
         for (size_t Word = 0u; Word < V.VariableSlotMask.size(); ++Word) { if (Word != 0u) O << ","; O << V.VariableSlotMask[Word] << "ull"; }
         O << "}}";
     });
-    WriteArray(Out,"HTNGeneratedDebugAxiom",Prefix+"_DEBUG_AXIOMS",B.Axioms,[](auto& O,const auto& V)
+    WriteArray(W.Debug,"HTNGeneratedDebugAxiom",Prefix+"_DEBUG_AXIOMS",B.Axioms,[](auto& O,const auto& V)
     {
         O<<"{"<<V.Id<<"u,"<<V.FirstParameter<<"u,"<<V.ParameterCount<<"u,"<<(V.Condition==kNoIndex?"HTN_NO_INDEX":std::to_string(V.Condition)+"u")<<","<<V.SourceLine<<"u,{";
         for (size_t Word = 0u; Word < V.VariableSlotMask.size(); ++Word) { if (Word != 0u) O << ","; O << V.VariableSlotMask[Word] << "ull"; }
         O << "}}";
     });
-    WriteArray(Out,"HTNGeneratedDebugConstant",Prefix+"_DEBUG_CONSTANTS",B.Constants,[](auto& O,const auto& V){O<<"{"<<V.GroupId<<"u,"<<V.Id<<"u,"<<V.Value<<"u,"<<V.SourceLine<<"u}";});
+    WriteArray(W.Debug,"HTNGeneratedDebugConstant",Prefix+"_DEBUG_CONSTANTS",B.Constants,[](auto& O,const auto& V){O<<"{"<<V.GroupId<<"u,"<<V.Id<<"u,"<<V.Value<<"u,"<<V.SourceLine<<"u}";});
     const size_t DebugSourceFileCount = B.SourceFiles.empty() ? 1u : B.SourceFiles.size();
-    Out << "static const char* const " << Prefix << "_DEBUG_SOURCE_FILES[" << DebugSourceFileCount << "] = {\n";
-    if (B.SourceFiles.empty()) Out << "    \"" << EscapeCString(SourceFile) << "\"\n";
-    else for (const auto& File : B.SourceFiles) Out << "    \"" << EscapeCString(File) << "\",\n";
-    Out << "};\n\n";
-    auto WriteSources = [&Out, &Prefix](const char* Name, const auto& Records)
+    W.Debug << "static const char* const " << Prefix << "_DEBUG_SOURCE_FILES[" << DebugSourceFileCount << "] = {\n";
+    if (B.SourceFiles.empty()) W.Debug << "    \"" << EscapeCString(SourceFile) << "\"\n";
+    else for (const auto& File : B.SourceFiles) W.Debug << "    \"" << EscapeCString(File) << "\",\n";
+    W.Debug << "};\n\n";
+    auto WriteSources = [&W, &Prefix](const char* Name, const auto& Records)
     {
-        WriteArray(Out, "HTNGeneratedDebugSourceRange", Prefix + Name, Records, [](auto& O, const auto& V)
+        WriteArray(W.Debug, "HTNGeneratedDebugSourceRange", Prefix + Name, Records, [](auto& O, const auto& V)
         {
             const auto& S = V.Source;
             O << "{" << S.FileIndex << "u," << S.Range.Begin.Line << "u," << S.Range.Begin.Column
@@ -1434,7 +1607,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         });
     };
     WriteSources("_DEBUG_VALUE_SOURCES", B.Values);
-    WriteArray(Out, "HTNGeneratedDebugSourceRange", Prefix + "_DEBUG_CONDITION_SOURCES", B.Conditions, [](auto& O, const auto& V)
+    WriteArray(W.Debug, "HTNGeneratedDebugSourceRange", Prefix + "_DEBUG_CONDITION_SOURCES", B.Conditions, [](auto& O, const auto& V)
     {
         const auto& S = V.DebugSource;
         O << "{" << S.FileIndex << "u," << S.Range.Begin.Line << "u," << S.Range.Begin.Column
@@ -1445,29 +1618,29 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     WriteSources("_DEBUG_METHOD_SOURCES", B.Methods);
     WriteSources("_DEBUG_AXIOM_SOURCES", B.Axioms);
     WriteSources("_DEBUG_CONSTANT_SOURCES", B.Constants);
-    Out << "static const HTNGeneratedDebugMetadata " << Prefix << "_DEBUG_METADATA = {\n";
-    Out << "    \"" << EscapeCString(SourceFile) << "\",\n";
-    Out << "    " << Prefix << "_DEBUG_STRINGS," << B.Strings.Values.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_VALUES," << B.Values.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_VARIABLE_STRING_IDS," << B.VariableStringIds.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_CONDITIONS," << B.Conditions.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_CONDITION_CHILD_REFS," << B.ConditionChildRefs.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_TASKS," << B.Tasks.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_BRANCHES," << B.Branches.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_METHODS," << B.Methods.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_AXIOMS," << B.Axioms.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_CONSTANTS," << B.Constants.size() << "u,\n";
-    Out << "    " << B.CallTermStringIds.size() << "u," << B.FactStringIds.size() << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_SOURCE_FILES," << DebugSourceFileCount << "u,\n";
-    Out << "    " << Prefix << "_DEBUG_VALUE_SOURCES,\n";
-    Out << "    " << Prefix << "_DEBUG_CONDITION_SOURCES,\n";
-    Out << "    " << Prefix << "_DEBUG_TASK_SOURCES,\n";
-    Out << "    " << Prefix << "_DEBUG_BRANCH_SOURCES,\n";
-    Out << "    " << Prefix << "_DEBUG_METHOD_SOURCES,\n";
-    Out << "    " << Prefix << "_DEBUG_AXIOM_SOURCES,\n";
-    Out << "    " << Prefix << "_DEBUG_CONSTANT_SOURCES\n";
-    Out << "};\n";
-    Out << "#endif\n\n";
+    W.Debug << "static const HTNGeneratedDebugMetadata " << Prefix << "_DEBUG_METADATA = {\n";
+    W.Debug << "    \"" << EscapeCString(SourceFile) << "\",\n";
+    W.Debug << "    " << Prefix << "_DEBUG_STRINGS," << B.Strings.Values.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_VALUES," << B.Values.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_VARIABLE_STRING_IDS," << B.VariableStringIds.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_CONDITIONS," << B.Conditions.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_CONDITION_CHILD_REFS," << B.ConditionChildRefs.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_TASKS," << B.Tasks.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_BRANCHES," << B.Branches.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_METHODS," << B.Methods.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_AXIOMS," << B.Axioms.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_CONSTANTS," << B.Constants.size() << "u,\n";
+    W.Debug << "    " << B.CallTermStringIds.size() << "u," << B.FactStringIds.size() << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_SOURCE_FILES," << DebugSourceFileCount << "u,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_VALUE_SOURCES,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_CONDITION_SOURCES,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_TASK_SOURCES,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_BRANCH_SOURCES,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_METHOD_SOURCES,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_AXIOM_SOURCES,\n";
+    W.Debug << "    " << Prefix << "_DEBUG_CONSTANT_SOURCES\n";
+    W.Debug << "};\n";
+    W.Debug << "#endif\n\n";
     // Prepared storage is fully domain-specific and opaque to generic C++. Literal
     // strings and list topology are non-owning generated data; initialization only
     // interns symbols and wires generated storage.
@@ -1711,8 +1884,10 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     };
 
     size_t MaxContinuationRestoreSlots = 0u;
-    for (const BranchRecord& Branch : B.Branches)
+    for (size_t BranchIndex = 0; BranchIndex < B.Branches.size(); ++BranchIndex)
     {
+        if (!Reachable.Branches[BranchIndex]) continue;
+        const auto& Branch = B.Branches[BranchIndex];
         for (uint32 LocalTask = 1u; LocalTask < Branch.TaskCount; ++LocalTask)
         {
             const uint32 TaskIndex = Branch.FirstTask + LocalTask;
@@ -1761,8 +1936,10 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "} " << Prefix << "_PENDING_CONTINUATION_ENTRY;\n\n";
 
     size_t MaxMethodSnapshotCount = 1u;
-    for (const auto& Method : B.Methods)
+    for (size_t M = 0; M < B.Methods.size(); ++M)
     {
+        if (!Reachable.Implementations[M]) continue;
+        const auto& Method = B.Methods[M];
         size_t Count = 0u;
         for (const uint64_t Mask : Method.VariableSlotMask)
             Count += std::popcount(Mask);
@@ -1792,7 +1969,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     if (inBacktrackingPolicy == HTNGeneratedBacktrackingPolicy::FixedWithOverflow)
         Out << "    HTNGeneratedBacktrackingOverflow* backtracking_overflow;\n";
 #if defined(HTN_PROFILE_DETAILED) || defined(HTN_GENERATED_EXECUTION_PROFILING)
-    Out << "    HTNGeneratedProfilingState* profiling;\n";
+    W.Profile << "    HTNGeneratedProfilingState* profiling;\n";
 #endif
     Out << "    HTNGeneratedVariableStorage variables;\n";
     Out << "    const void* fact_prepared_storage;\n";
@@ -1808,9 +1985,9 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     if (inBacktrackingPolicy == HTNGeneratedBacktrackingPolicy::FixedWithOverflow)
         Out << "    uint32_t overflow_pending_count;\n";
     Out << "    uint32_t total_pending_count;\n";
-    Out << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
-    Out << "    HTNGeneratedStructuralCounters* structural_counters;\n";
-    Out << "#endif\n";
+    W.Profile << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
+    W.Profile << "    HTNGeneratedStructuralCounters* structural_counters;\n";
+    W.Profile << "#endif\n";
     Out << "    HTNAtom variable_values[" << GeneratedVariableStorageCount << "u];\n";
     Out << "    uint64_t variable_bound_mask[" << GeneratedBoundMaskStorageWordCount << "u];\n";
     Out << "    const void* fact_slots[" << GeneratedFactSlotStorageCount << "u];\n";
@@ -1831,12 +2008,12 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "} " << DomainSymbol << "_AXIOM_SCOPE;\n\n";
 
     Out << "#define HTN_GENERATED_EXECUTION(context) ((" << Prefix << "_EXECUTION_STORAGE*)((context)->execution_storage))\n";
-    Out << "#define HTN_GENERATED_VARIABLES(context) (&HTN_GENERATED_EXECUTION(context)->variables)\n";
-    Out << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
-    Out << "#define HTN_GENERATED_STRUCTURAL_COUNTERS(context) (HTN_GENERATED_EXECUTION(context)->structural_counters)\n";
-    Out << "#endif\n";
+    W.Debug << "#define HTN_GENERATED_VARIABLES(context) (&HTN_GENERATED_EXECUTION(context)->variables)\n";
+    W.Profile << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
+    W.Profile << "#define HTN_GENERATED_STRUCTURAL_COUNTERS(context) (HTN_GENERATED_EXECUTION(context)->structural_counters)\n";
+    W.Profile << "#endif\n";
 #ifdef HTN_PROFILE_DETAILED
-    Out << "#define HTN_GENERATED_PROFILING(context) (HTN_GENERATED_EXECUTION(context)->profiling)\n";
+    W.Profile << "#define HTN_GENERATED_PROFILING(context) (HTN_GENERATED_EXECUTION(context)->profiling)\n";
 #endif
     Out << "\n";
 
@@ -1845,13 +2022,13 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     if (inBacktrackingPolicy == HTNGeneratedBacktrackingPolicy::FixedWithOverflow)
         Out << "    storage->backtracking_overflow = NULL;\n";
 #if defined(HTN_PROFILE_DETAILED) || defined(HTN_GENERATED_EXECUTION_PROFILING)
-    Out << "    storage->profiling = HTNGeneratedProfiling_Create();\n";
-    Out << "    if (storage->profiling == NULL)\n";
-    Out << "        return 0;\n";
+    W.Profile << "    storage->profiling = HTNGeneratedProfiling_Create();\n";
+    W.Profile << "    if (storage->profiling == NULL)\n";
+    W.Profile << "        return 0;\n";
 #endif
-    Out << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
-    Out << "    storage->structural_counters = NULL;\n";
-    Out << "#endif\n";
+    W.Profile << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
+    W.Profile << "    storage->structural_counters = NULL;\n";
+    W.Profile << "#endif\n";
     Out << "    storage->call_frame_count = 0u;\n";
     Out << "    storage->execution_info.call_frame_capacity = " << inCallFrameCapacity << "u;\n";
     Out << "    storage->execution_info.call_frame_size = sizeof(" << Prefix << "_CALL_FRAME);\n";
@@ -1889,17 +2066,25 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     if (inBacktrackingPolicy == HTNGeneratedBacktrackingPolicy::FixedWithOverflow)
         Out << "    HTNGeneratedBacktracking_DestroyOverflow(storage->backtracking_overflow);\n";
 #if defined(HTN_PROFILE_DETAILED) || defined(HTN_GENERATED_EXECUTION_PROFILING)
-    Out << "    HTNGeneratedProfiling_Destroy(storage->profiling);\n";
+    W.Profile << "    HTNGeneratedProfiling_Destroy(storage->profiling);\n";
 #endif
     Out << "    HTNAtom_DestroyRange(storage->variable_values, " << GeneratedVariableCount << "u);\n";
     Out << "    HTNAtom_DestroyRange(storage->snapshot_values, " << GeneratedSnapshotCapacity << "u);\n";
     Out << "}\n\n";
 
 #ifdef HTN_GENERATED_EXECUTION_PROFILING
-    Out << "static HTNGeneratedProfilingState* " << Prefix << "_GET_EXECUTION_PROFILING(void* raw_storage)\n{\n";
-    Out << "    return ((" << Prefix << "_EXECUTION_STORAGE*)raw_storage)->profiling;\n";
-    Out << "}\n\n";
+    W.Profile << "static HTNGeneratedProfilingState* " << Prefix << "_GET_EXECUTION_PROFILING(void* raw_storage)\n{\n";
+    W.Profile << "    return ((" << Prefix << "_EXECUTION_STORAGE*)raw_storage)->profiling;\n";
+    W.Profile << "}\n\n";
 #endif
+    // A profiling-build descriptor requires a callable accessor. No profiling
+    // state is allocated in None mode; existing host APIs already accept NULL.
+    if (inInstrumentation == HTNGeneratedInstrumentation::None)
+    {
+        Out << "#ifdef HTN_GENERATED_EXECUTION_PROFILING\n";
+        Out << "static HTNGeneratedProfilingState* " << Prefix << "_GET_EXECUTION_PROFILING(void* storage)\n{\n";
+        Out << "    (void)storage;\n    return NULL;\n}\n#endif\n\n";
+    }
 
     Out << "static const HTNGeneratedExecutionInfo* " << Prefix << "_GET_EXECUTION_INFO(const void* raw_storage)\n{\n";
     Out << "    return raw_storage ? &((const " << Prefix << "_EXECUTION_STORAGE*)raw_storage)->execution_info : NULL;\n}\n\n";
@@ -1923,6 +2108,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "};\n\n";
     uint32 RequirementCount = 0;
     std::set<std::array<uint32, 4>> RequiredSites;
+    // Registration validation covers the complete linked domain, including calls
+    // in pruned bodies. Reachability only filters executable helpers below.
     Out << "static const HTNGeneratedCallTermRequirement " << Prefix << "_CALLTERM_REQUIREMENTS[] = {\n";
     const auto EmitRequirement = [&](uint32 inId, const HTNIRSourceLocation& inSource) {
         // Inherited/specialized IR copies share the same original call site.
@@ -1938,7 +2125,9 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         if (Condition.Kind == HTN_CONDITION_CALL || Condition.Kind == HTN_CONDITION_CALL_BIND)
             EmitRequirement(Condition.Id, Condition.Source);
     for (const auto& Calls : B.TaskCallExpressions)
-        for (const auto& Call : Calls) EmitRequirement(Call.Id, Call.Source);
+        for (const auto& Call : Calls) if (!Call.IsRuntimeValue) EmitRequirement(Call.Id, Call.Source);
+    for (const auto& Expression : B.RuntimeExpressions)
+        if (Expression.CallTermSlot != kNoIndex) EmitRequirement(B.CallTermStringIds[Expression.CallTermSlot], Expression.Source);
     if (RequirementCount == 0) Out << "    {NULL, {NULL, NULL, 0u, 0u}}\n";
     Out << "};\n\n";
     Out << "static const HTNGeneratedPlannerDefinition " << DomainSymbol << "_PLANNER_DEFINITION = {\n";
@@ -1947,7 +2136,10 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         ? "HTN_GENERATED_FEATURE_RUNTIME_BACKTRACKING"
         : "HTN_GENERATED_FEATURE_NONE") << ",\n";
     Out << "#ifdef HTN_DEBUG_DECOMPOSITION\n";
-    Out << "    &" << Prefix << "_DEBUG_METADATA,\n";
+    if (inInstrumentation == HTNGeneratedInstrumentation::Full)
+        W.Debug << "    &" << Prefix << "_DEBUG_METADATA,\n";
+    else
+        Out << "    NULL,\n";
     Out << "#endif\n";
     Out << "    sizeof(" << Prefix << "_PREPARED_STORAGE),\n";
     Out << "    " << Prefix << "_INITIALIZE_PREPARED_STORAGE,\n";
@@ -1957,6 +2149,9 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "    " << Prefix << "_DESTROY_EXECUTION_STORAGE";
 #ifdef HTN_GENERATED_EXECUTION_PROFILING
     Out << ",\n    " << Prefix << "_GET_EXECUTION_PROFILING";
+#else
+    if (inInstrumentation == HTNGeneratedInstrumentation::None)
+        Out << "\n#ifdef HTN_GENERATED_EXECUTION_PROFILING\n    , " << Prefix << "_GET_EXECUTION_PROFILING\n#endif\n";
 #endif
     Out << ",\n    &" << EntryPointName << ",\n";
     Out << "    " << Prefix << "_FACT_NAMES,\n";
@@ -1969,6 +2164,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     // materialization; the shared ABI exposes only constant-time opaque-state primitives.
     for (uint32 ConditionIndex = 0u; ConditionIndex < static_cast<uint32>(B.Conditions.size()); ++ConditionIndex)
     {
+        if (!Reachable.Conditions[ConditionIndex]) continue;
         const ConditionRecord& Condition = B.Conditions[ConditionIndex];
         if (Condition.Kind != HTN_CONDITION_AXIOM || Condition.ResolvedIndex == kNoIndex ||
             Condition.ResolvedIndex >= B.Axioms.size())
@@ -2066,7 +2262,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         for (const uint32 I : CopiedInputs)
             Out << "    if (axiom_input_copied_" << I << ") HTNAtom_Destroy(&axiom_input_copy_" << I << ");\n";
 
-        Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_AXIOM(context, &" << DomainSymbol
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_AXIOM(context, &" << DomainSymbol
             << "_PLANNER_DEFINITION, " << Condition.ResolvedIndex << "u);\n";
         Out << "}\n\n";
 
@@ -2139,7 +2335,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             Out << "    }\n";
         }
 
-        Out << "    HTN_GENERATED_EVENT_DEBUG_END_AXIOM(context, &" << DomainSymbol << "_PLANNER_DEFINITION, valid);\n";
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_AXIOM(context, &" << DomainSymbol << "_PLANNER_DEFINITION, valid);\n";
         AxiomScopeSlotIndex = 0u;
         for (uint32 Word = 0u; Word < static_cast<uint32>(Axiom.VariableSlotMask.size()); ++Word)
         {
@@ -2180,8 +2376,10 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     }
 
     bool NeedsBuiltinComparisonHelper = false;
-    for (const ConditionRecord& Condition : B.Conditions)
+    for (size_t C = 0; C < B.Conditions.size(); ++C)
     {
+        if (!Reachable.Conditions[C]) continue;
+        const auto& Condition = B.Conditions[C];
         if (Condition.Kind != HTN_CONDITION_BUILTIN_COMPARISON)
             continue;
         bool StaticResult = false;
@@ -2237,6 +2435,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     // becomes a choice point at a particular callsite depends on the bound set there.
     for (uint32 ConditionIndex = 0; ConditionIndex < static_cast<uint32>(B.Conditions.size()); ++ConditionIndex)
     {
+        if (!Reachable.Conditions[ConditionIndex]) continue;
         const ConditionRecord& Condition = B.Conditions[ConditionIndex];
         if (Condition.Kind != HTN_CONDITION_FACT)
             continue;
@@ -2259,9 +2458,26 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     // generated continuation directly. An iterative dispatcher drives these
     // functions without a native recursive call chain.
     std::vector<std::string> MethodFunctions(B.Methods.size());
+    std::vector<std::string> MethodBodies(B.Methods.size());
+    std::vector<uint32> MethodImplementationUses(B.Methods.size(), 0u);
+    // With a single surviving alias, bake its identity into the body. The
+    // canonical implementation index can belong to an unreachable qualified name.
+    std::vector<uint32> MethodIdentity(B.Methods.size(), kNoIndex);
     std::vector<std::string> TaskFunctions(B.Tasks.size());
     for (size_t M = 0; M < B.Methods.size(); ++M)
-        MethodFunctions[M] = Prefix + "_METHOD_" + std::to_string(M);
+    {
+        if (!Reachable.Methods[M]) continue;
+        ++MethodImplementationUses[B.Methods[M].ImplementationIndex];
+        MethodIdentity[B.Methods[M].ImplementationIndex] = static_cast<uint32>(M);
+    }
+    for (size_t M = 0; M < B.Methods.size(); ++M)
+    {
+        const uint32 Implementation = B.Methods[M].ImplementationIndex;
+        const bool Shared = MethodImplementationUses[Implementation] > 1u;
+        MethodBodies[M] = Prefix + (Shared ? "_METHOD_BODY_" : "_METHOD_") + std::to_string(Implementation);
+        MethodFunctions[M] = inInstrumentation == HTNGeneratedInstrumentation::Full && Shared
+            ? Prefix + "_METHOD_" + std::to_string(M) : MethodBodies[M];
+    }
     for (size_t T = 0; T < B.Tasks.size(); ++T)
         TaskFunctions[T] = Prefix + "_TASK_" + std::to_string(T);
 
@@ -2273,13 +2489,15 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     // generated callsite. Generated execution only preserves/copies those concrete values
     // before replacing the variable frame; it no longer interprets binding kinds.
 
-    // Compile-time self-tail-call detection. A task record is an occurrence in one
-    // branch, so it is safe to mark it when it is the final task of that branch
-    // and resolves to the method that owns the branch. This lets argument setup
+    // A shared branch can be entered through either callable name. The tail-call
+    // optimization is safe when the target shares its implementation/slot layout.
+    // It is not safe to infer equivalence from the unqualified name alone.
+    // This lets argument setup
     // omit unnecessary copies; explicit call frames still preserve retry state.
     std::vector<int> SelfTailMethodByTask(B.Tasks.size(), -1);
     for (size_t MethodIndex = 0; MethodIndex < B.Methods.size(); ++MethodIndex)
     {
+        if (!Reachable.Implementations[MethodIndex]) continue;
         const MethodRecord& Method = B.Methods[MethodIndex];
         for (uint32 LocalBranch = 0u; LocalBranch < Method.BranchCount; ++LocalBranch)
         {
@@ -2293,7 +2511,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             if (TailTask.Kind != HTN_TASK_COMPOUND)
                 continue;
             const int TargetMethod = B.FindMethodByStringId(TailTask.Id, TailTask.ArgumentCount);
-            if (TargetMethod == static_cast<int>(MethodIndex))
+            if (TargetMethod >= 0 && B.Methods[static_cast<size_t>(TargetMethod)].ImplementationIndex == Method.ImplementationIndex)
                 SelfTailMethodByTask[TailTaskIndex] = TargetMethod;
         }
     }
@@ -2301,10 +2519,20 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     // Keep the public definition accessor declaration explicit and stable for engine/build integration.
     Out << "#ifdef __cplusplus\nextern \"C\"\n#endif\n";
     Out << "HTN_GENERATED_MODULE_EXPORT const HTNGeneratedPlannerDefinition* " << EntryPointName << "_GetDefinition(void);\n\n";
-    for (const std::string& Function : MethodFunctions)
-        Out << "static int " << Function << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result);\n";
-    for (const std::string& Function : TaskFunctions)
-        Out << "static int " << Function << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result);\n";
+    for (size_t M = 0; M < B.Methods.size(); ++M)
+    {
+        if (Reachable.Implementations[M])
+        {
+            Out << "static int " << MethodBodies[M] << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result";
+            if (MethodImplementationUses[M] > 1u) W.Debug << ", uint32_t method_index";
+            Out << ");\n";
+        }
+        if (Reachable.Methods[M] && MethodImplementationUses[B.Methods[M].ImplementationIndex] > 1u)
+            W.Debug << "static int " << Prefix << "_METHOD_" << M << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result);\n";
+    }
+    for (size_t T = 0; T < TaskFunctions.size(); ++T)
+        if (Reachable.Tasks[T])
+            Out << "static int " << TaskFunctions[T] << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result);\n";
     Out << "\n";
 
     for (size_t TaskIndex = 0u; TaskIndex < TaskContinuationRestoreSlots.size(); ++TaskIndex)
@@ -2329,6 +2557,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     // generated C. The C++ bridge is only an arbitrary-depth overflow fallback.
     for (size_t BranchIndex = 0; BranchIndex < B.Branches.size(); ++BranchIndex)
     {
+        if (!Reachable.Branches[BranchIndex]) continue;
         const BranchRecord& Branch = B.Branches[BranchIndex];
         if (Branch.TaskCount == 0u)
             continue;
@@ -2371,19 +2600,23 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             {
                 const uint32 TaskIndex = Branch.FirstTask + (Branch.TaskCount - 1u - TI);
                 const auto& RestoreSlots = TaskContinuationRestoreSlots[TaskIndex];
-                Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_PUSH);\n";
-                Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+                W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_PUSH);\n";
+                W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
                 for (const uint32 Slot : RestoreSlots)
                 {
                     Out << "        { const HTNAtom* snapshot_value = HTNGeneratedVariables_Get(&storage->variables, " << Slot << "u); "
-                        << "if (!HTNGeneratedBacktracking_PushContinuationSnapshotOverflow(storage->backtracking_overflow, " << Slot << "u, snapshot_value)) { "
-                        << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL); "
-                        << "storage->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY; HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_PUSH); return 0; } }\n";
+                        << "if (!HTNGeneratedBacktracking_PushContinuationSnapshotOverflow(storage->backtracking_overflow, " << Slot << "u, snapshot_value)) { ";
+                    W.Profile << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL); ";
+                    Out << "storage->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY; ";
+                    W.Profile << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_PUSH); ";
+                    Out << "return 0; } }\n";
                 }
-                Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+                W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
                 Out << "        if (!HTNGeneratedBacktracking_PushPendingContinuationOverflow(storage->backtracking_overflow, variable_frame_id, &"
-                    << TaskFunctions[TaskIndex] << ", " << RestoreSlots.size() << "u)) { storage->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY; HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_PUSH); return 0; }\n";
-                Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_PUSH);\n";
+                    << TaskFunctions[TaskIndex] << ", " << RestoreSlots.size() << "u)) { storage->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY; ";
+                W.Profile << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_PUSH); ";
+                Out << "return 0; }\n";
+                W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_PUSH);\n";
             }
             Out << "        storage->overflow_pending_count += " << Branch.TaskCount << "u;\n";
             Out << "        storage->total_pending_count += " << Branch.TaskCount << "u;\n";
@@ -2398,8 +2631,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             Out << "    {\n";
             Out << "        " << Prefix << "_PENDING_CONTINUATION_ENTRY* pending;\n";
             Out << "        const uint32_t snapshot_start = storage->inline_snapshot_count;\n";
-            Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_PUSH);\n";
-            Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+            W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_PUSH);\n";
+            W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
             for (const uint32 Slot : RestoreSlots)
             {
                 Out << "        storage->snapshot_slots[storage->inline_snapshot_count] = " << Slot << "u;\n";
@@ -2408,13 +2641,13 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                     << "else HTNAtom_Unbind(&storage->snapshot_values[storage->inline_snapshot_count]); }\n";
                 Out << "        ++storage->inline_snapshot_count;\n";
             }
-            Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+            W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
             Out << "        pending = &storage->pending[storage->inline_pending_count++];\n";
             Out << "        pending->continuation = &" << TaskFunctions[TaskIndex] << ";\n";
             Out << "        pending->snapshot_start = snapshot_start;\n";
             Out << "        pending->snapshot_count = " << RestoreSlots.size() << "u;\n";
             Out << "        pending->variable_frame_id = variable_frame_id;\n";
-            Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_PUSH);\n";
+            W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_PUSH);\n";
             Out << "    }\n";
         }
         Out << "    storage->total_pending_count += " << Branch.TaskCount << "u;\n";
@@ -2435,10 +2668,10 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         Out << "    if (storage->overflow_pending_count != 0u) {\n";
         Out << "        uint32_t restore_snapshot_count = 0u;\n";
         Out << "        uint32_t restore_snapshot_index;\n";
-        Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
+        W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
         Out << "        continuation = HTNGeneratedBacktracking_PopPendingContinuationOverflow(storage->backtracking_overflow, &storage->current_variable_frame_id, &restore_snapshot_count);\n";
         Out << "        if (continuation) {\n";
-        Out << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+        W.Profile << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
         Out << "            for (restore_snapshot_index = 0u; restore_snapshot_index < restore_snapshot_count; ++restore_snapshot_index) {\n";
         Out << "                HTNAtom snapshot_value;\n";
         Out << "                uint32_t variable_slot;\n";
@@ -2450,20 +2683,20 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         Out << "                }\n";
         Out << "                HTNAtom_Destroy(&snapshot_value);\n";
         Out << "            }\n";
-        Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+        W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
         Out << "            --storage->overflow_pending_count;\n";
         Out << "            --storage->total_pending_count;\n";
         Out << "        }\n";
-        Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
+        W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
         Out << "        return continuation;\n";
         Out << "    }\n";
     }
     Out << "    {\n";
     Out << "        " << Prefix << "_PENDING_CONTINUATION_ENTRY* pending;\n";
     Out << "        uint32_t snapshot_index;\n";
-    Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
     Out << "        pending = &storage->pending[--storage->inline_pending_count];\n";
-    Out << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
     Out << "        for (snapshot_index = pending->snapshot_start; snapshot_index < pending->snapshot_start + pending->snapshot_count; ++snapshot_index) {\n";
     Out << "            HTNAtom* snapshot_value = &storage->snapshot_values[snapshot_index];\n";
     Out << "            const uint32_t variable_slot = storage->snapshot_slots[snapshot_index];\n";
@@ -2474,11 +2707,11 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "            }\n";
     Out << "        }\n";
     Out << "        storage->inline_snapshot_count = pending->snapshot_start;\n";
-    Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
     Out << "        storage->current_variable_frame_id = pending->variable_frame_id;\n";
     Out << "        continuation = pending->continuation;\n";
     Out << "        --storage->total_pending_count;\n";
-    Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
     Out << "    }\n";
     Out << "    return continuation;\n";
     Out << "}\n\n";
@@ -2526,23 +2759,39 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     // exactly matching the old LIFO HTNTaskInstance behaviour.
     for (size_t T = 0; T < B.Tasks.size(); ++T)
     {
+        if (!Reachable.Tasks[T]) continue;
         const auto& Task = B.Tasks[T];
         Out << "static int " << TaskFunctions[T] << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result)\n{\n";
         Out << "    (void)context;\n";
         Out << "    (void)out_result;\n";
         Out << "    if (HTN_GENERATED_EXECUTION(context)->call_frame->resume) {\n";
         Out << "        const int task_result = HTN_GENERATED_EXECUTION(context)->call_frame->child_result;\n";
-        Out << "        HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, task_result);\n";
-        Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+        W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, task_result);\n";
+        W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
         Out << "        return task_result;\n";
         Out << "    }\n";
-        Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
-        Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, " << T << "u);\n";
+        W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, " << T << "u);\n";
         if (T < B.TaskCallExpressions.size())
         {
             for (size_t C = 0; C < B.TaskCallExpressions[T].size(); ++C)
             {
                 const TaskCallExpressionRecord& Call = B.TaskCallExpressions[T][C];
+                if (Call.IsRuntimeValue)
+                {
+                    Out << "    { HTNAtom runtime_list; HTNAtom_Init(&runtime_list); int list_valid = 1;\n";
+                    uint32 Temporary = 0u;
+                    EmitGeneratedOwnedValue(W, B, Call.RuntimeValue, DomainSymbol, "&runtime_list", "list_valid", "        ", Temporary);
+                    Out << "        if (list_valid) ";
+                    EmitGeneratedSetMoveIfChanged(W, Call.OutputSlot, "&runtime_list", "");
+                    Out << "        HTNAtom_Destroy(&runtime_list);\n";
+                    Out << "        if (!list_valid) {\n";
+                    W.Debug << "            HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                    W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+                    Out << "            return 0;\n";
+                    Out << "        } }\n";
+                    continue;
+                }
                 const std::string ArgumentsArray = "call_arguments_" + std::to_string(C);
                 if (!Call.Arguments.empty())
                 {
@@ -2590,7 +2839,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                 const std::string CallSucceeded = "call_succeeded_" + std::to_string(C);
                 if (Call.CallTermSlot >= B.CallTermStringIds.size()) { B.SetError("Generated task call expression has invalid callterm slot"); return {}; }
                 W.DomainExpressionComment(Call.DomainExpression);
-                Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
+                W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
                 const std::string CallSource = "call_source_" + std::to_string(C);
                 EmitGeneratedCallTermSource(W, B, Call.Source, CallSource);
                 Out << "    const int " << CallSucceeded << " = HTNCallTermRegistry_InvokeGeneratedCallTermWithSource(context, &HTN_GENERATED_EXECUTION(context)->callterm_slots["
@@ -2600,22 +2849,22 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                 else
                     Out << ArgumentsArray << ", " << Call.Arguments.size() << "u";
                 Out << ", &" << CallResult << ", &" << CallSource << ");\n";
-                Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
+                W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CALLTERM);\n";
                 Out << "    { const uint64_t fact_storage_generation = HTNWorldState_GetFactStorageGeneration(context->world_state);\n";
                 Out << "      if (HTN_GENERATED_EXECUTION(context)->fact_storage_generation != fact_storage_generation) {\n";
                 Out << "          if (!" << DomainSymbol << "_PREPARE_FACTS(HTN_GENERATED_EXECUTION(context)->fact_slots, context->world_state, context->prepared_storage)) {\n";
                 Out << "              HTNAtom_Destroy(&" << CallResult << ");\n";
                 Out << "              HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_PREPARATION_FAILED;\n";
-                Out << "              HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-                Out << "              HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+                W.Debug << "              HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                W.Profile << "              HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
                 Out << "              return 0;\n";
                 Out << "          }\n";
                 Out << "          HTN_GENERATED_EXECUTION(context)->fact_storage_generation = fact_storage_generation;\n";
                 Out << "      } }\n";
                 Out << "    if (!" << CallSucceeded << ") {\n";
                 Out << "        HTNAtom_Destroy(&" << CallResult << ");\n";
-                Out << "        HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-                Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+                W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
                 Out << "        return 0;\n";
                 Out << "    }\n";
                 EmitGeneratedSetMoveIfChanged(W, Call.OutputSlot, "&" + CallResult, "    ");
@@ -2658,21 +2907,21 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                 Out << "NULL, 0u";
             Out << ")) {\n";
             Out << "            HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY;\n";
-            Out << "            HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-            Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+            W.Debug << "            HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+            W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
             Out << "            return 0;\n";
             Out << "        }\n";
             Out << "        if (!HTNAtom_PushBackListElementMove(out_result, &plan_step)) {\n";
             Out << "            HTNAtom_Destroy(&plan_step);\n";
             Out << "            HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY;\n";
-            Out << "            HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-            Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+            W.Debug << "            HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+            W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
             Out << "            return 0;\n";
             Out << "        }\n";
             Out << "        HTNAtom_Destroy(&plan_step);\n";
             Out << "    }\n";
-            Out << "    HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 1);\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+            W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 1);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
             Out << "    return 1;\n";
         }
         else
@@ -2680,8 +2929,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             const int MethodIndex = B.FindMethodByStringId(Task.Id, Task.ArgumentCount);
             if (MethodIndex < 0)
             {
-                Out << "    HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-                Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+                W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
                 Out << "    return 0; /* unresolved compound task */\n";
             }
             else
@@ -2717,8 +2966,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                         Out << "!compound_argument_" << ArgumentIndex;
                     }
                     Out << ") {\n";
-                    Out << "        HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-                    Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
+                    W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_TASK(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                    W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_TASK);\n";
                     Out << "        return 0;\n";
                     Out << "    }\n";
                 }
@@ -2758,9 +3007,9 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                         Bits &= Bits - 1u;
                     }
                 }
-                Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_ENTER_COMPOUND);\n";
+                W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_ENTER_COMPOUND);\n";
                 Out << "    HTN_GENERATED_EXECUTION(context)->current_variable_frame_id = HTN_GENERATED_EXECUTION(context)->next_variable_frame_id++;\n";
-                Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_ENTER_COMPOUND);\n";
+                W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_ENTER_COMPOUND);\n";
 
                 for (uint32 ArgumentIndex = 0u; ArgumentIndex < Task.ArgumentCount; ++ArgumentIndex)
                 {
@@ -2791,9 +3040,20 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
 
     // Conditions execute synchronously. Only task invocations suspend, with
     // branch snapshots and resume labels stored in the explicit call frame.
+    // Instrumented aliases need only a thin entry wrapper to retain the called
+    // method identity across every resume. They introduce no new planner frame.
+    // Without instrumentation, callers point directly to the shared body.
+    for (size_t M = 0; M < B.Methods.size(); ++M)
+    {
+        if (!Reachable.Methods[M]) continue;
+        if (MethodImplementationUses[B.Methods[M].ImplementationIndex] <= 1u) continue;
+        W.Debug << "static int " << Prefix << "_METHOD_" << M << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result)\n{\n";
+        W.Debug << "    return " << MethodBodies[M] << "(context, out_result, " << M << "u);\n}\n\n";
+    }
     for (size_t M = 0; M < B.Methods.size(); ++M)
     {
         const auto& Method = B.Methods[M];
+        if (!Reachable.Implementations[M]) continue;
         BoundVariableSet MethodBoundVariables;
         for (uint32 PI = 0; PI < Method.ParameterCount; ++PI)
         {
@@ -2819,9 +3079,12 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         for (uint32 BI = 0; BI < Method.BranchCount; ++BI)
             BranchLabels[BI] = W.NewLabel();
 
-        Out << "static int " << MethodFunctions[M] << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result)\n{\n";
+        Out << "static int " << MethodBodies[M] << "(const HTNGeneratedPlannerContext* context, HTNAtom* out_result";
+        if (MethodImplementationUses[M] > 1u) W.Debug << ", uint32_t method_index";
+        Out << ")\n{\n";
         Out << "    (void)context;\n";
         Out << "    (void)out_result;\n";
+        if (MethodImplementationUses[M] > 1u) W.Debug << "    (void)method_index;\n";
         std::vector<uint32> ResumeLabels(Method.BranchCount);
         Out << "    " << Prefix << "_CALL_FRAME* frame = HTN_GENERATED_EXECUTION(context)->call_frame;\n";
         Out << "    switch (frame->resume) {\n";
@@ -2833,12 +3096,13 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         }
         Out << "    default: break;\n";
         Out << "    }\n";
-        Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
-        Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, " << M << "u);\n";
+        W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, "
+                << (MethodImplementationUses[M] > 1u ? "method_index" : std::to_string(MethodIdentity[M]) + "u") << ");\n";
         if (Method.BranchCount == 0u)
         {
-            Out << "    HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
+            W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
             Out << "    return 0;\n";
             Out << "}\n\n";
             continue;
@@ -2869,48 +3133,51 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                 {
                     const uint32 Slot = MethodVariableSlots[SnapshotIndex];
                     Out << "    { const HTNAtom* branch_retry_value = HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, " << Slot << "u);\n";
-                    Out << "      if (branch_retry_value) { if (!HTNAtom_AssignCopy(&frame->retry_values[" << SnapshotIndex << "u], branch_retry_value)) { HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u); HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY; HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); return 0; } frame->retry_bound[" << SnapshotIndex << "u] = 1u; } }\n";
+                    Out << "      if (branch_retry_value) { if (!HTNAtom_AssignCopy(&frame->retry_values[" << SnapshotIndex << "u], branch_retry_value)) { HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u); HTN_GENERATED_EXECUTION(context)->failure_state = HTN_DECOMPOSITION_OUT_OF_MEMORY; ";
+                    W.Debug << "HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); ";
+                    W.Profile << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); ";
+                    Out << "return 0; } frame->retry_bound[" << SnapshotIndex << "u] = 1u; } }\n";
                 }
             }
-            Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
-            Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_SETUP);\n";
-            Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, " << BIndex << "u);\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_SETUP);\n";
-            Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_CONDITION_CFG);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_SETUP);\n";
+            W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, " << BIndex << "u);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_SETUP);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_CONDITION_CFG);\n";
             EmitCondition(W, B, Branch.Condition, BranchSuccess, BranchFailedDebug, MethodBoundVariables, DomainSymbol);
 
             Out << W.Label(BranchFailedDebug) << ":\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_CONDITION_CFG);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_CONDITION_CFG);\n";
             if (CanRetryNextBranch)
                 Out << "    HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u);\n";
-            Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_RETRY);\n";
-            Out << "    HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_RETRY);\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_RETRY);\n";
+            W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_RETRY);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
             Out << "    goto " << W.Label(BranchFailure) << ";\n\n";
 
             Out << W.Label(BranchSuccess) << ":\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_CONDITION_CFG);\n";
-            Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_TASK_SCHEDULING);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_CONDITION_CFG);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_TASK_SCHEDULING);\n";
             if (Branch.TaskCount != 0u)
             {
                 Out << "    if (!" << Prefix << "_PUSH_BRANCH_CONTINUATIONS_" << BIndex << "(context)) {\n";
                 if (CanRetryNextBranch)
                     Out << "        HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u);\n";
-                Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_TASK_SCHEDULING);\n";
-                Out << "        HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-                Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
-                Out << "        HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-                Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
+                W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_TASK_SCHEDULING);\n";
+                W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
+                W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
                 Out << "        return 0;\n";
                 Out << "    }\n";
                 for (uint32 TI = 0; TI < Branch.TaskCount; ++TI)
                 {
                     const uint32 TaskIndex = Branch.FirstTask + (Branch.TaskCount - 1u - TI);
-                    Out << "    HTN_GENERATED_EVENT_DEBUG_CAPTURE_PENDING_TASK(context, " << TaskIndex << "u);\n";
+                    W.Debug << "    HTN_GENERATED_EVENT_DEBUG_CAPTURE_PENDING_TASK(context, " << TaskIndex << "u);\n";
                 }
             }
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_TASK_SCHEDULING);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_TASK_SCHEDULING);\n";
 
             if (Branch.TaskCount != 0u)
             {
@@ -2929,9 +3196,17 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                 Out << "        if (!frame->child_result) {\n";
                 if (CanRetryNextBranch)
                 {
-                    Out << "            if (HTN_GENERATED_EXECUTION(context)->failure_state != HTN_DECOMPOSITION_NO_PLAN) { HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u); HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH); HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); return 0; }\n";
+                    const auto EmitRetryFailure = [&](const char* Check) {
+                        Out << "            if (" << Check << ") { HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u); ";
+                        W.Debug << "HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); ";
+                        W.Profile << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH); ";
+                        W.Debug << "HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); ";
+                        W.Profile << "HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); ";
+                        Out << "return 0; }\n";
+                    };
+                    EmitRetryFailure("HTN_GENERATED_EXECUTION(context)->failure_state != HTN_DECOMPOSITION_NO_PLAN");
                     if (inRuntimeBacktrackingSupport == HTNGeneratedRuntimeBacktrackingSupport::Enabled)
-                        Out << "            if ((context->backtracking_mode & HTN_BACKTRACKING_BRANCHES) == 0) { HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u); HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH); HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0); HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD); return 0; }\n";
+                        EmitRetryFailure("(context->backtracking_mode & HTN_BACKTRACKING_BRANCHES) == 0");
                     Out << "            while (HTN_GENERATED_EXECUTION(context)->total_pending_count > frame->retry_pending_base) (void)" << Prefix << "_POP_PENDING_CONTINUATION(context);\n";
                     Out << "            while (HTNAtom_GetListSize(out_result) > frame->retry_plan_size) (void)HTNAtomList_RemoveAt(&out_result->value.list_value, (uint32_t)(HTNAtom_GetListSize(out_result) - 1));\n";
                     for (size_t SnapshotIndex = 0u; SnapshotIndex < MethodVariableSlots.size(); ++SnapshotIndex)
@@ -2945,16 +3220,16 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
                     }
                     Out << "            HTN_GENERATED_EXECUTION(context)->current_variable_frame_id = frame->retry_frame;\n";
                     Out << "            HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u);\n";
-                    Out << "            HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-                    Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
+                    W.Debug << "            HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                    W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
                     Out << "            goto " << W.Label(BranchFailure) << ";\n";
                 }
                 else
                 {
-                    Out << "            HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-                    Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
-                    Out << "            HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-                    Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
+                    W.Debug << "            HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                    W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
+                    W.Debug << "            HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+                    W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
                     Out << "            return 0;\n";
                 }
                 Out << "        }\n";
@@ -2963,18 +3238,18 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
 
             if (CanRetryNextBranch)
                 Out << "    HTNAtom_DestroyRange(frame->retry_values, " << MethodSnapshotCount << "u);\n";
-            Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_COMMIT);\n";
-            Out << "    HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 1);\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_COMMIT);\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
-            Out << "    HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 1);\n";
-            Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_BRANCH_COMMIT);\n";
+            W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_BRANCH(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 1);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_BRANCH_COMMIT);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_BRANCH);\n";
+            W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 1);\n";
+            W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
             Out << "    return 1;\n\n";
         }
 
         Out << W.Label(MethodFailureLabel) << ":\n";
-        Out << "    HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
-        Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_METHOD(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+        W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_METHOD);\n";
         Out << "    return 0;\n";
         Out << "}\n\n";
     }
@@ -3006,13 +3281,13 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "    fact_storage_generation = HTNWorldState_GetFactStorageGeneration(context->world_state);\n";
     Out << "    fact_slots_prepared = HTN_GENERATED_EXECUTION(context)->fact_prepared_storage == context->prepared_storage && HTN_GENERATED_EXECUTION(context)->fact_world_state == context->world_state && HTN_GENERATED_EXECUTION(context)->fact_storage_generation == fact_storage_generation;\n";
     Out << "    callterm_slots_prepared = HTN_GENERATED_EXECUTION(context)->callterm_prepared_storage == context->prepared_storage && HTN_GENERATED_EXECUTION(context)->callterm_binding_context == context->callterm_binding_context;\n";
-    Out << "    HTN_GENERATED_PREPARATION_BEGIN(HTN_GENERATED_EXECUTION(context)->profiling, fact_slots_prepared, callterm_slots_prepared);\n";
-    Out << "#if defined(HTN_PROFILE_DETAILED) || defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
-    Out << "    HTNGeneratedProfiling_ResetExecution(HTN_GENERATED_EXECUTION(context)->profiling);\n";
-    Out << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
-    Out << "    HTN_GENERATED_EXECUTION(context)->structural_counters = HTNGeneratedProfiling_GetStructuralCountersMutable(HTN_GENERATED_EXECUTION(context)->profiling);\n";
-    Out << "#endif\n";
-    Out << "#endif\n";
+    W.Profile << "    HTN_GENERATED_PREPARATION_BEGIN(HTN_GENERATED_EXECUTION(context)->profiling, fact_slots_prepared, callterm_slots_prepared);\n";
+    W.Profile << "#if defined(HTN_PROFILE_DETAILED) || defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
+    W.Profile << "    HTNGeneratedProfiling_ResetExecution(HTN_GENERATED_EXECUTION(context)->profiling);\n";
+    W.Profile << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
+    W.Profile << "    HTN_GENERATED_EXECUTION(context)->structural_counters = HTNGeneratedProfiling_GetStructuralCountersMutable(HTN_GENERATED_EXECUTION(context)->profiling);\n";
+    W.Profile << "#endif\n";
+    W.Profile << "#endif\n";
     Out << "    {\n";
     Out << "        uint32_t reset_index = 0u;\n";
     if (inBacktrackingPolicy == HTNGeneratedBacktrackingPolicy::FixedWithOverflow)
@@ -3032,20 +3307,20 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "        HTN_GENERATED_EXECUTION(context)->current_variable_frame_id = UINT64_C(1);\n";
     Out << "        HTN_GENERATED_EXECUTION(context)->next_variable_frame_id = UINT64_C(2);\n";
     Out << "    }\n";
-    Out << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_RESET);\n";
+    W.Profile << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_RESET);\n";
     Out << "    if (!fact_slots_prepared) {\n";
     Out << "        if (!" << DomainSymbol << "_PREPARE_FACTS(HTN_GENERATED_EXECUTION(context)->fact_slots, context->world_state, context->prepared_storage)) return HTN_DECOMPOSITION_PREPARATION_FAILED;\n";
     Out << "        HTN_GENERATED_EXECUTION(context)->fact_prepared_storage = context->prepared_storage;\n";
     Out << "        HTN_GENERATED_EXECUTION(context)->fact_world_state = context->world_state;\n";
     Out << "        HTN_GENERATED_EXECUTION(context)->fact_storage_generation = fact_storage_generation;\n";
     Out << "    }\n";
-    Out << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_FACT_SLOTS);\n";
+    W.Profile << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_FACT_SLOTS);\n";
     Out << "    if (!callterm_slots_prepared) {\n";
     Out << "        if (!" << Prefix << "_PREPARE_CALLTERMS(HTN_GENERATED_EXECUTION(context)->callterm_slots, context->callterm_binding_context)) return HTN_DECOMPOSITION_PREPARATION_FAILED;\n";
     Out << "        HTN_GENERATED_EXECUTION(context)->callterm_prepared_storage = context->prepared_storage;\n";
     Out << "        HTN_GENERATED_EXECUTION(context)->callterm_binding_context = context->callterm_binding_context;\n";
     Out << "    }\n";
-    Out << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_CALLTERM_SLOTS);\n";
+    W.Profile << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_CALLTERM_SLOTS);\n";
     for (size_t M = 0; M < B.Methods.size(); ++M)
     {
         if (!B.Methods[M].IsExternallyDecomposable) continue;
@@ -3057,11 +3332,11 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
         Out << "        entry_method = " << M << "u;\n";
         Out << "    }\n";
     }
-    Out << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_TOP_LEVEL_METHOD);\n";
-    Out << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_COMPLETE);\n";
+    W.Profile << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_TOP_LEVEL_METHOD);\n";
+    W.Profile << "    HTN_GENERATED_PREPARATION_MARK(HTN_GENERATED_EXECUTION(context)->profiling, HTN_GENERATED_PREPARATION_COMPLETE);\n";
     Out << "    if (entry_method == HTN_NO_INDEX) return HTN_DECOMPOSITION_INVALID_CALL;\n";
-    Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_PLAN(context, &" << DomainSymbol << "_PLANNER_DEFINITION, entry_method);\n";
-    Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_DISPATCH);\n";
+    W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_PLAN(context, &" << DomainSymbol << "_PLANNER_DEFINITION, entry_method);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_GENERATED_DISPATCH);\n";
     Out << "    switch (entry_method) {\n";
     for (size_t M = 0; M < B.Methods.size(); ++M)
     {
@@ -3083,8 +3358,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "    default: result = 0; break;\n";
     Out << "    }\n";
     Out << "    if (!result) {\n";
-    Out << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_DISPATCH);\n";
-    Out << "        HTN_GENERATED_EVENT_DEBUG_END_PLAN(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+    W.Profile << "        HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_DISPATCH);\n";
+    W.Debug << "        HTN_GENERATED_EVENT_DEBUG_END_PLAN(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
     Out << "        HTNAtom_SetEmptyList(out_result);\n";
     Out << "        return HTN_GENERATED_EXECUTION(context)->failure_state;\n";
     Out << "    }\n";
@@ -3095,10 +3370,10 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "        if (continuation_storage->overflow_pending_count != 0u) {\n";
     Out << "            uint32_t restore_snapshot_count = 0u;\n";
     Out << "            uint32_t restore_snapshot_index;\n";
-    Out << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
+    W.Profile << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
     Out << "            pending_continuation = HTNGeneratedBacktracking_PopPendingContinuationOverflow(continuation_storage->backtracking_overflow, &continuation_storage->current_variable_frame_id, &restore_snapshot_count);\n";
     Out << "            if (pending_continuation) {\n";
-    Out << "                HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+    W.Profile << "                HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
     Out << "                for (restore_snapshot_index = 0u; restore_snapshot_index < restore_snapshot_count; ++restore_snapshot_index) {\n";
     Out << "                    HTNAtom snapshot_value;\n";
     Out << "                    uint32_t variable_slot;\n";
@@ -3110,11 +3385,11 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "                    }\n";
     Out << "                    HTNAtom_Destroy(&snapshot_value);\n";
     Out << "                }\n";
-    Out << "                HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+    W.Profile << "                HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
     Out << "                --continuation_storage->overflow_pending_count;\n";
     Out << "                --continuation_storage->total_pending_count;\n";
     Out << "            }\n";
-    Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
+    W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
     Out << "        } else {\n";
     }
     else
@@ -3123,9 +3398,9 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     }
     Out << "            " << Prefix << "_PENDING_CONTINUATION_ENTRY* pending;\n";
     Out << "            uint32_t snapshot_index;\n";
-    Out << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
+    W.Profile << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
     Out << "            pending = &continuation_storage->pending[--continuation_storage->inline_pending_count];\n";
-    Out << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+    W.Profile << "            HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
     Out << "            for (snapshot_index = pending->snapshot_start; snapshot_index < pending->snapshot_start + pending->snapshot_count; ++snapshot_index) {\n";
     Out << "                HTNAtom* snapshot_value = &continuation_storage->snapshot_values[snapshot_index];\n";
     Out << "                const uint32_t variable_slot = continuation_storage->snapshot_slots[snapshot_index];\n";
@@ -3136,22 +3411,23 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "                }\n";
     Out << "            }\n";
     Out << "            continuation_storage->inline_snapshot_count = pending->snapshot_start;\n";
-    Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
+    W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONTINUATION_TRAIL);\n";
     Out << "            HTN_GENERATED_EXECUTION(context)->current_variable_frame_id = pending->variable_frame_id;\n";
     Out << "            pending_continuation = pending->continuation;\n";
     Out << "            --continuation_storage->total_pending_count;\n";
-    Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
+    W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_PENDING_POP);\n";
     Out << "        }\n";
     Out << "        if (!pending_continuation) break;\n";
     Out << "        if (!" << Prefix << "_RUN(context, out_result, pending_continuation)) {\n";
-    Out << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_DISPATCH);\n";
-    Out << "            HTN_GENERATED_EVENT_DEBUG_END_PLAN(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
+    W.Profile << "            HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_DISPATCH);\n";
+    W.Debug << "            HTN_GENERATED_EVENT_DEBUG_END_PLAN(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 0);\n";
     Out << "            HTNAtom_SetEmptyList(out_result);\n";
     Out << "            return HTN_GENERATED_EXECUTION(context)->failure_state;\n";
     Out << "        }\n";
     Out << "    }\n";
-    Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_DISPATCH);\n";
-    Out << "    HTN_GENERATED_EVENT_DEBUG_END_PLAN(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 1);\n";
+    W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_GENERATED_DISPATCH);\n";
+    W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_PLAN(context, &" << DomainSymbol << "_PLANNER_DEFINITION, 1);\n";
+    Out << "    HTN_GENERATED_EXECUTION(context)->execution_info.last_error = NULL;\n";
     Out << "    return HTN_DECOMPOSITION_SUCCEEDED;\n";
     Out << "}\n\n";
 
@@ -3160,12 +3436,12 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "    return &" << DomainSymbol << "_PLANNER_DEFINITION;\n";
     Out << "}\n\n";
 #ifdef HTN_PROFILE_DETAILED
-    Out << "#undef HTN_GENERATED_PROFILING\n";
+    W.Profile << "#undef HTN_GENERATED_PROFILING\n";
 #endif
-    Out << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
-    Out << "#undef HTN_GENERATED_STRUCTURAL_COUNTERS\n";
-    Out << "#endif\n";
-    Out << "#undef HTN_GENERATED_VARIABLES\n";
+    W.Profile << "#if defined(HTN_GENERATED_EXECUTION_PROFILING)\n";
+    W.Profile << "#undef HTN_GENERATED_STRUCTURAL_COUNTERS\n";
+    W.Profile << "#endif\n";
+    W.Debug << "#undef HTN_GENERATED_VARIABLES\n";
     Out << "#undef HTN_GENERATED_EXECUTION\n\n";
 
     Out << "#if defined(_MSC_VER)\n";
@@ -3175,7 +3451,8 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "#elif defined(__GNUC__)\n";
     Out << "#pragma GCC diagnostic pop\n";
     Out << "#endif\n";
-    return Out.str();
+    outStatistics = W.Statistics;
+    return W.Source;
 }
 
 
@@ -3190,8 +3467,16 @@ bool WriteTextFile(const std::string& inPath,const std::string& inText,std::stri
 
 bool HTNCCodeGenerator::Generate(const HTNCompilerAST::Domain& inDomain,
                                  const HTNCCodeGeneratorOptions& inOptions,
-                                 std::string& outError) const
+                                 std::string& outError,
+                                 HTNGeneratedCodeStatistics* outStatistics) const
 {
+    if (outStatistics) *outStatistics = {};
+    if (inOptions.Instrumentation != HTNGeneratedInstrumentation::Full &&
+        inOptions.Instrumentation != HTNGeneratedInstrumentation::None)
+    {
+        outError = "Unknown generated instrumentation mode";
+        return false;
+    }
     if(inOptions.OutputSourcePath.empty()){outError="Output source path must not be empty";return false;}
     if(inOptions.EntryPointName.empty()){outError="Entry point name must not be empty";return false;}
     if(inOptions.BacktrackingPolicy != HTNGeneratedBacktrackingPolicy::FixedWithOverflow &&
@@ -3229,13 +3514,17 @@ bool HTNCCodeGenerator::Generate(const HTNCompilerAST::Domain& inDomain,
     }
     const std::string Prefix="HTN_"+MakeIdentifier(IR.DomainId);
     const std::string SourceFile=inOptions.SourceFilePath.empty()?"<domain>":inOptions.SourceFilePath;
+    HTNGeneratedCodeStatistics Statistics;
     const std::string GeneratedSource = MakeSource(IR,Prefix,inOptions.EntryPointName,SourceFile,inOptions.LinkedSourceFiles,
                                                    inOptions.BacktrackingPolicy,inOptions.RuntimeBacktrackingSupport,
-                                                   inOptions.BacktrackingCapacity, inOptions.CallFrameCapacity);
+                                                   inOptions.BacktrackingCapacity, inOptions.CallFrameCapacity,
+                                                   inOptions.Instrumentation, Statistics);
     if (IR.HasError())
     {
         outError = IR.GetError();
         return false;
     }
-    return WriteTextFile(inOptions.OutputSourcePath, GeneratedSource, outError);
+    if (!WriteTextFile(inOptions.OutputSourcePath, GeneratedSource, outError)) return false;
+    if (outStatistics) *outStatistics = Statistics;
+    return true;
 }

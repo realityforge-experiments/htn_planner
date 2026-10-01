@@ -26,7 +26,8 @@ enum class HTNIRValueKind : uint8_t
     Variable,
     Constant,
     Call,
-    Arithmetic
+    Arithmetic,
+    RuntimeList
 };
 
 enum class HTNIRArithmeticOperator : uint8_t { Add, Subtract, Multiply, Divide, Modulo, Increment, Decrement };
@@ -66,8 +67,10 @@ struct HTNIRStringTable
     std::unordered_map<std::string, uint32> Indices;
 };
 
-struct HTNIRValue { HTNIRValueKind Kind=HTNIRValueKind::Literal; uint32 Text=0, DebugText=0, SourceLine=0, VariableSlot=HTN_IR_NO_INDEX, StaticValueIndex=HTN_IR_NO_INDEX, ArithmeticExpression=HTN_IR_NO_INDEX; HTNIRSourceLocation Source; HTNAtomType AtomType=HTN_ATOM_TYPE_UNBOUND; int32 IntValue=0; float FloatValue=0.0f; uint32 BoolValue=0, ListElement=HTN_IR_NO_INDEX; bool DebugAsVariable=true; };
+struct HTNIRValue { HTNIRValueKind Kind=HTNIRValueKind::Literal; uint32 Text=0, DebugText=0, SourceLine=0, VariableSlot=HTN_IR_NO_INDEX, StaticValueIndex=HTN_IR_NO_INDEX, ArithmeticExpression=HTN_IR_NO_INDEX, RuntimeExpression=HTN_IR_NO_INDEX; HTNIRSourceLocation Source; HTNAtomType AtomType=HTN_ATOM_TYPE_UNBOUND; int32 IntValue=0; float FloatValue=0.0f; uint32 BoolValue=0, ListElement=HTN_IR_NO_INDEX; bool DebugAsVariable=true; };
 struct HTNIRArithmeticExpression { HTNIRArithmeticOperator Operator=HTNIRArithmeticOperator::Add; std::vector<HTNIRValue> Operands; };
+// Runtime lists and their nested calls own evaluable children, never static atoms.
+struct HTNIRRuntimeExpression { std::vector<HTNIRValue> Children; uint32 CallTermSlot=HTN_IR_NO_INDEX; HTNIRSourceLocation Source; };
 struct HTNIRStaticValue { uint32 Text=0; HTNAtomType AtomType=HTN_ATOM_TYPE_UNBOUND; int32 IntValue=0; float FloatValue=0.0f; uint32 BoolValue=0, ListElement=HTN_IR_NO_INDEX; };
 struct HTNIRListElement { HTNAtomType AtomType=HTN_ATOM_TYPE_UNBOUND; uint32 Text=0; int32 IntValue=0; float FloatValue=0.0f; uint32 BoolValue=0, FirstChildRef=0, ChildCount=0; };
 struct HTNIRCondition
@@ -93,6 +96,8 @@ struct HTNIRTask
 };
 struct HTNIRTaskCallExpression
 {
+    bool IsRuntimeValue = false;
+    HTNIRValue RuntimeValue;
     uint32 Id=HTN_IR_NO_INDEX, CallTermSlot=HTN_IR_NO_INDEX, OutputSlot=HTN_IR_NO_INDEX, SourceLine=0;
     std::string DomainExpression;
     std::vector<HTNIRValue> Arguments;
@@ -101,6 +106,8 @@ struct HTNIRTaskCallExpression
 struct HTNIRBranch { uint32 Id=0, Condition=HTN_IR_NO_INDEX, FirstTask=0, TaskCount=0, SourceLine=0; HTNIRSourceLocation Source; };
 struct HTNIRMethod
 {
+    // Callable identities remain distinct; linked aliases share one implementation.
+    uint32 ImplementationIndex = HTN_IR_NO_INDEX;
     uint32 Id=0, FirstParameter=0, ParameterCount=0, FirstBranch=0, BranchCount=0, IsTopLevel=0, IsExternallyDecomposable=0, SourceLine=0;
     std::array<uint64_t, HTN_GENERATED_VARIABLE_SLOT_MASK_WORDS> VariableSlotMask{};
     HTNIRSourceLocation Source;
@@ -140,6 +147,9 @@ struct HTNCompilerIR
         if (inValue.Kind == HTNIRValueKind::Arithmetic && inValue.ArithmeticExpression < ArithmeticExpressions.size())
             for (const HTNIRValue& Operand : ArithmeticExpressions[inValue.ArithmeticExpression].Operands)
                 MarkVariableSlot(ioMask, Operand);
+        if (inValue.RuntimeExpression < RuntimeExpressions.size())
+            for (const HTNIRValue& Child : RuntimeExpressions[inValue.RuntimeExpression].Children)
+                MarkVariableSlot(ioMask, Child);
     }
 
     void MarkVariableSlot(std::array<uint64_t, HTN_GENERATED_VARIABLE_SLOT_MASK_WORDS>& ioMask,
@@ -157,6 +167,7 @@ struct HTNCompilerIR
     HTNIRStringTable Strings;
     std::vector<HTNIRValue> Values;
     std::vector<HTNIRArithmeticExpression> ArithmeticExpressions;
+    std::vector<HTNIRRuntimeExpression> RuntimeExpressions;
     std::vector<HTNIRStaticValue> StaticValues;
     std::vector<HTNIRListElement> ListElements;
     std::vector<uint32> ListChildRefs;

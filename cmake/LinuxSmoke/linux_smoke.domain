@@ -1,8 +1,11 @@
 // Copyright (c) 2026 Jose Antonio Escribano joseantonioescribanoayllon@gmail.com
 (:domain LinuxSmoke top_level_domain
     (:method (run) top_level_method
-        (choose (and (#candidate_value (++ 1))) ((!selected 2))))
+        (choose (and (#candidate_value ?value) (== ?value (++ 1))) ((!selected ?value))))
     (:method (no_plan) top_level_method
         (never (and (== 1 2)) ((!unexpected))))
+    (:method (runtime_list ?inp_id) top_level_method
+        (branch (and (= ?list (target ?inp_id (++ ?inp_id) (position (call identity ?inp_id)))))
+            ((!result ?list))))
     (:axiom (candidate_value ?out_value) (and (candidate ?out_value)))
 )

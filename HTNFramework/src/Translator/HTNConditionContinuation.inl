@@ -59,7 +59,7 @@ void EmitConditionContinuation(CodeWriter& W, const HTNCompilerIR& B, const uint
         C.Kind == HTN_CONDITION_ALT || C.Kind == HTN_CONDITION_NOT || C.Kind == HTN_CONDITION_AXIOM;
     const auto Event = [&](bool inBegin, bool inResult) {
         if (!Composite) return;
-        W.Out << "    HTN_GENERATED_EVENT_DEBUG_" << (inBegin ? "BEGIN" : "END")
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_" << (inBegin ? "BEGIN" : "END")
               << "_CONDITION(context, &" << inDomainSymbol << "_PLANNER_DEFINITION, " << inCondition
               << "u, " << (inBegin ? "" : (inResult ? "1, " : "0, ")) << "0);\n";
     };
@@ -137,9 +137,9 @@ void EmitConditionContinuation(CodeWriter& W, const HTNCompilerIR& B, const uint
             if (B.Strings.Values[Parameter.Text].starts_with("out_"))
                 EmitUnboundVariableGuard(W, B.Values[C.FirstArgument + I], Failure);
         }
-        W.Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
+        W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
         EmitGeneratedAxiomBegin(W, B, C, inCondition, inDomainSymbol, Scope);
-        W.Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
+        W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
         W.Out << "    const uint64_t " << Scope << "_frame = HTN_GENERATED_EXECUTION(context)->current_variable_frame_id;\n";
         EmitConditionContinuation(W, B, Axiom.Condition, Bound, BodyFailure,
             [&](uint32 inRetry, const GeneratedCommit& inCommit) {
@@ -163,11 +163,11 @@ void EmitConditionContinuation(CodeWriter& W, const HTNCompilerIR& B, const uint
                 for (uint32 I = 0; I < C.ArgumentCount; ++I)
                     W.Out << "    HTNAtom_Copy(&" << Scope << "_argument_copy[" << I << "u], &" << Scope << ".argument_values[" << I << "u]);\n";
                 const uint32 Resume = W.NewLabel();
-                W.Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n"
-                      << "    const int " << Scope << "_valid = " << GetGeneratedAxiomEndHelperName(inDomainSymbol, inCondition)
-                      << "(context, 1, &" << Scope << "_scope_copy);\n"
-                      << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n"
-                      << "    if (!" << Scope << "_valid) goto " << W.Label(Resume) << ";\n";
+                W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
+                W.Out << "    const int " << Scope << "_valid = " << GetGeneratedAxiomEndHelperName(inDomainSymbol, inCondition)
+                      << "(context, 1, &" << Scope << "_scope_copy);\n";
+                W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
+                W.Out << "    if (!" << Scope << "_valid) goto " << W.Label(Resume) << ";\n";
                 Success(Resume, [&] {
                     inCommit();
                     EmitGeneratedCheckpointCommit(W, Locals);
@@ -178,15 +178,15 @@ void EmitConditionContinuation(CodeWriter& W, const HTNCompilerIR& B, const uint
                 EmitGeneratedCheckpointRollback(W, Checkpoint);
                 EmitGeneratedCheckpointPush(W, Checkpoint);
                 EmitGeneratedCheckpointRollback(W, Locals);
-                W.Out << "    HTN_GENERATED_EXECUTION(context)->current_variable_frame_id = " << Scope << "_frame;\n"
-                      << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_AXIOM(context, &" << inDomainSymbol
-                      << "_PLANNER_DEFINITION, " << C.ResolvedIndex << "u);\n"
-                      << "    goto " << W.Label(inRetry) << ";\n    }\n";
+                W.Out << "    HTN_GENERATED_EXECUTION(context)->current_variable_frame_id = " << Scope << "_frame;\n";
+                W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_AXIOM(context, &" << inDomainSymbol
+                      << "_PLANNER_DEFINITION, " << C.ResolvedIndex << "u);\n";
+                W.Out << "    goto " << W.Label(inRetry) << ";\n    }\n";
             }, inDomainSymbol);
         W.Out << W.Label(BodyFailure) << ":;\n";
-        W.Out << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
+        W.Profile << "    HTN_GENERATED_PROFILE_BEGIN(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
         EmitGeneratedAxiomEndCall(W, B, C, inCondition, inDomainSymbol, "0", "    (void)", ";\n", Scope);
-        W.Out << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
+        W.Profile << "    HTN_GENERATED_PROFILE_END(context, HTN_GENERATED_PROFILE_CONDITION_AXIOM_CONTROL);\n";
         W.Out << "    goto " << W.Label(Failure) << ";\n";
     }
     else if (C.Kind == HTN_CONDITION_FACT && Analysis.MayProduceMultipleSolutions)
@@ -194,14 +194,14 @@ void EmitConditionContinuation(CodeWriter& W, const HTNCompilerIR& B, const uint
         const uint32 Retry = W.NewLabel();
         const uint32 Next = W.NewLabel();
         W.Out << "    uint32_t fact_choice_cursor_" << Retry << " = 0u;\n" << W.Label(Next) << ":;\n";
-        W.Out << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_BEGIN_CONDITION(context, &" << inDomainSymbol
               << "_PLANNER_DEFINITION, " << inCondition << "u, 1);\n";
         W.Out << "    if (!" << GetGeneratedFactChoiceHelperName(inDomainSymbol, inCondition)
-              << "(context, fact_choice_cursor_" << Retry << "++)) {\n"
-              << "    HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol
-              << "_PLANNER_DEFINITION, " << inCondition << "u, 0, 1);\n"
-              << "    goto " << W.Label(Failure) << ";\n    }\n"
-              << "    HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol
+              << "(context, fact_choice_cursor_" << Retry << "++)) {\n";
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol
+              << "_PLANNER_DEFINITION, " << inCondition << "u, 0, 1);\n";
+        W.Out << "    goto " << W.Label(Failure) << ";\n    }\n";
+        W.Debug << "    HTN_GENERATED_EVENT_DEBUG_END_CONDITION(context, &" << inDomainSymbol
               << "_PLANNER_DEFINITION, " << inCondition << "u, 1, 1);\n";
         Success(Retry, [] {});
         W.Out << W.Label(Retry) << ":;\n";

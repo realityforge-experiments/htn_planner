@@ -59,6 +59,14 @@ bool HTNTranslateDomain(const HTNTranslationRequest& inRequest, HTNTranslationRe
         return false;
     }
 
+    if (inRequest.Instrumentation != HTNGeneratedInstrumentation::Full &&
+        inRequest.Instrumentation != HTNGeneratedInstrumentation::None)
+    {
+        outResult.Failure = HTNTranslationFailure::InvalidOptions;
+        outResult.ErrorMessage = "Unknown generated instrumentation mode.";
+        return false;
+    }
+
     if (inRequest.BacktrackingCapacity == 0u)
     {
         outResult.Failure = HTNTranslationFailure::InvalidOptions;
@@ -91,12 +99,13 @@ bool HTNTranslateDomain(const HTNTranslationRequest& inRequest, HTNTranslationRe
     Options.RuntimeBacktrackingSupport = inRequest.RuntimeBacktrackingSupport;
     Options.BacktrackingCapacity = inRequest.BacktrackingCapacity;
     Options.CallFrameCapacity = inRequest.CallFrameCapacity;
+    Options.Instrumentation = inRequest.Instrumentation;
     for (const std::string& SourceFile : LoadResult.SourceFiles)
         Options.LinkedSourceFiles.emplace_back(MakePortableDomainPath(std::filesystem::path(SourceFile)));
 
     HTNCCodeGenerator Generator;
     std::string GenerationError;
-    if (!Generator.Generate(LoadResult.Domain, Options, GenerationError))
+    if (!Generator.Generate(LoadResult.Domain, Options, GenerationError, &outResult.CodeStatistics))
     {
         outResult.Failure = HTNTranslationFailure::CodeGeneration;
         outResult.ErrorMessage = GenerationError;

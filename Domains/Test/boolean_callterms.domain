@@ -1,0 +1,27 @@
+// Copyright (c) 2026 Jose Antonio Escribano joseantonioescribanoayllon@gmail.com
+
+(:domain BooleanCallTerms top_level_domain
+    (:method (condition) top_level_method
+        (branch (and (call ppr_finalize_best)) ((!result))))
+
+    (:method (deferred) top_level_method
+        (branch () ((&later))))
+    (:method (later)
+        (branch (and (call ppr_finalize_best)) ((!result))))
+
+    (:method (alternatives) top_level_method
+        (branch (and (candidate ?value) (call ppr_finalize_best ?value)) ((!unexpected)))
+        (fallback () ((!fallback))))
+
+    (:method (assignment) top_level_method
+        (branch (and (= ?position (call ppr_finalize_best))) ((!result ?position))))
+    (:method (axiom_assignment) top_level_method
+        (branch (and (#select_position ?position)) ((!result ?position))))
+    (:axiom (select_position ?out_position)
+        (and (= ?out_position (call ppr_finalize_best))))
+
+    (:method (comparison) top_level_method
+        (branch (and (== (call ppr_finalize_best) (call expected_value))) ((!result))))
+    (:method (nested_condition) top_level_method
+        (branch (and (call accept_value (call ppr_finalize_best))) ((!result))))
+)

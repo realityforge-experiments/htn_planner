@@ -40,6 +40,7 @@ void CollectAssignmentUses(const AST::ValuePtr& Value, std::vector<std::string>&
     if (Value->Kind == AST::ValueKind::Variable) Uses.push_back(Text(Value));
     for (const auto& Argument : Value->CallArguments) CollectAssignmentUses(Argument, Uses);
     for (const auto& Operand : Value->ArithmeticOperands) CollectAssignmentUses(Operand, Uses);
+    for (const auto& Element : Value->ListElements) CollectAssignmentUses(Element, Uses);
 }
 
 HTNAssignmentScopeNode AssignmentScope(const AST::ConditionPtr& Condition)
@@ -125,6 +126,8 @@ bool ValidateValueUse(const AST::ValuePtr& inValue,
     if (inValue->Kind == AST::ValueKind::Arithmetic)
         for (const auto& Operand : inValue->GetArithmeticOperandNodes())
             Valid = ValidateValueUse(Operand, inVariables, inUsage, inFiles, outDiagnostics) && Valid;
+    for (const auto& Element : inValue->ListElements)
+        Valid = ValidateValueUse(Element, inVariables, "a runtime list element", inFiles, outDiagnostics) && Valid;
     return Valid;
 }
 
@@ -146,6 +149,11 @@ bool ValidateConditionVariables(const AST::ConditionPtr& inCondition,
             Valid = false;
         }
     };
+    // Fact/axiom arguments may bind bare variables, but nested list elements are reads.
+    if (inCondition->Kind == AST::ConditionKind::Fact || inCondition->Kind == AST::ConditionKind::Axiom)
+        for (const auto& Argument : inCondition->Arguments)
+            if (Argument->Kind != AST::ValueKind::Variable)
+                Valid = ValidateValueUse(Argument, inVariables, "a fact or axiom value argument", inFiles, outDiagnostics) && Valid;
     switch (inCondition->Kind)
     {
     case AST::ConditionKind::Fact:

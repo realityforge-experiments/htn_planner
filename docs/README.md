@@ -1,5 +1,12 @@
 # Documentation
 
+- [Domain language: tutorial and reference](DOMAIN_LANGUAGE.md)
+
+- [2.1.0 release candidate](RELEASE_2_1_0.md)
+- [Runtime list expressions](RUNTIME_LISTS.md)
+- [Standalone callterm conditions](RELEASE_NOTES_BOOLEAN_CALLTERMS.md)
+- [Generated C instrumentation and size reduction](GENERATED_INSTRUMENTATION.md)
+
 - [2.0.4 release notes and migration](RELEASE_2_0_4.md)
 - [Generated recursion and call-frame capacity](GENERATED_RECURSION.md)
 

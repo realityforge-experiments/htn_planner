@@ -1,0 +1,52 @@
+// Copyright (c) 2026 Jose Antonio Escribano.
+(:include "../Includes/shared_implementation_base.domain")
+(:domain SharedImplementations top_level_domain
+    (:axiom (choose_value ?inp_value ?out_value) overrides SharedBase
+        (and (= ?out_value (+ ?inp_value 100))))
+    (:axiom (candidate ?out_value) (and (candidate_value ?out_value)))
+    (:method (choose ?inp_value) overrides SharedBase
+        (one () ((!derived ?inp_value))))
+    (:method (choose ?inp_left ?inp_right)
+        (two () ((!pair ?inp_left ?inp_right))))
+    (:method (run) top_level_method
+        (all (and (#choose_value 5 ?derived) (#SharedBase::choose_value 5 ?base_result)
+                  (#SharedImplementations::choose_value 6 ?qualified))
+            ((shared 1) (SharedBase::shared 2)
+             (choose) (SharedBase::choose) (choose 3) (SharedBase::choose 4)
+             (choose 5 6) (!outputs ?derived ?base_result ?qualified))))
+    (:method (shared_entry ?inp_value) top_level_method
+        (both () ((shared ?inp_value) (SharedBase::shared ?inp_value))))
+    (:method (recursive ?inp_count) top_level_method
+        (both () ((walk 0 ?inp_count) (SharedImplementations::walk 0 ?inp_count))))
+    (:method (walk ?inp_index ?inp_count)
+        (next (and (< ?inp_index ?inp_count))
+            ((!visit ?inp_index) (walk (++ ?inp_index) ?inp_count) (!return ?inp_index)))
+        (done () ((!finished ?inp_index))))
+    (:method (retry) top_level_method
+        (match (and (#candidate ?candidate) (== ?candidate 2)) ((shared ?candidate))))
+    (:method (rollback ?inp_value) top_level_method
+        (fail () ((shared ?inp_value) (never)))
+        (fallback () ((!fallback ?inp_value))))
+    (:method (never))
+    (:method (deferred) top_level_method
+        (later () ((&shared 7) (&SharedBase::shared 8)
+                   (&choose 9) (&SharedImplementations::choose 10) (&choose 11 12))))
+    (:method (error_plain) top_level_method (one () ((report_error))))
+    (:method (error_qualified) top_level_method (one () ((SharedBase::report_error))))
+    // These client entries have no callers in the domain. Both arities must stay.
+    (:method (client_entry) top_level_method (one () ((!client_zero))))
+    (:method (client_entry ?inp_value) top_level_method (one () ((!client_one ?inp_value))))
+    (:method (client_empty) top_level_method)
+    (:method (client_cycle ?inp_count) top_level_method (one () ((even_step ?inp_count))))
+    (:method (even_step ?inp_count)
+        (next (and (> ?inp_count 0)) ((odd_step (-- ?inp_count)) (!even ?inp_count)))
+        (done () ((!even_zero))))
+    (:method (odd_step ?inp_count)
+        (next (and (> ?inp_count 0)) ((even_step (-- ?inp_count)) (!odd ?inp_count)))
+        (done () ((!odd_zero))))
+    (:method (dead_cycle_a) (one () ((dead_cycle_b))))
+    (:method (dead_cycle_b) (one () ((dead_cycle_a))))
+    // Retain the pre-existing external dispatch contract for every deferred target.
+    (:method (dead_deferred_source) (one () ((&deferred_only 42))))
+    (:method (deferred_only ?inp_value) (one () ((!deferred_only ?inp_value))))
+)

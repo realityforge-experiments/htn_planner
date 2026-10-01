@@ -18,6 +18,10 @@ Independent method branches and independent `or`/`alt` alternatives may declare
 the same local name; a subsequent assignment cannot redeclare a name used by
 any preceding alternative. Names used inside `not` also count as prior uses.
 
+The generated frontend also accepts [runtime list initializers](RUNTIME_LISTS.md),
+such as `(= ?target (target ?entity_id (call get_entity_position ?entity_id)))`.
+List elements must resolve successfully before the destination is bound.
+
 ## Axiom parameters
 
 An axiom may initialize its own `?out_` parameter using `=`. The parameter declares

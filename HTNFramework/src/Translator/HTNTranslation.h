@@ -35,6 +35,8 @@ struct HTNTranslationRequest
 
     // Fixed generated call-frame array size; no runtime growth or allocation.
     uint32_t CallFrameCapacity = 8192u;
+
+    HTNGeneratedInstrumentation Instrumentation = HTNGeneratedInstrumentation::Full;
 };
 
 // Identifies which stage prevented a translation request from completing.
@@ -67,6 +69,7 @@ struct HTNTranslationResult
     std::string DomainId;
     size_t LinkedSourceFileCount = 0u;
     std::filesystem::path OutputSourcePath;
+    HTNGeneratedCodeStatistics CodeStatistics;
 };
 
 // Loads, links and validates the requested domain, then generates C using the

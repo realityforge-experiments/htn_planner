@@ -22,6 +22,8 @@ void PrintUsage()
                  "  --backtracking-capacity=<positive integer> (default: 32)\n"
                  "  --call-frame-capacity=<positive integer> (default: 8192)\n"
                  "  --runtime-backtracking-support=disabled|enabled (default: disabled)\n"
+                 "  --instrumentation=full|none (default: full)\n"
+                 "  --code-stats (report source bytes and newline counts by category)\n"
                  "Example: HTNTranslator Domains/Test/human.domain CreateHumanHTN Generated\n";
 }
 
@@ -109,6 +111,8 @@ int main(int argc, char** argv)
     HTNGeneratedRuntimeBacktrackingSupport RuntimeBacktrackingSupport = HTNGeneratedRuntimeBacktrackingSupport::Disabled;
     uint32_t BacktrackingCapacity = 32u;
     uint32_t CallFrameCapacity = 8192u;
+    HTNGeneratedInstrumentation Instrumentation = HTNGeneratedInstrumentation::Full;
+    bool PrintCodeStatistics = false;
 
     for (int ArgumentIndex = 3; ArgumentIndex < argc; ++ArgumentIndex)
     {
@@ -117,6 +121,25 @@ int main(int argc, char** argv)
         const std::string CapacityPrefix = "--backtracking-capacity=";
         const std::string CallFrameCapacityPrefix = "--call-frame-capacity=";
         const std::string RuntimeBacktrackingSupportPrefix = "--runtime-backtracking-support=";
+        const std::string InstrumentationPrefix = "--instrumentation=";
+
+        if (Argument == "--code-stats")
+        {
+            PrintCodeStatistics = true;
+            continue;
+        }
+        if (Argument.rfind(InstrumentationPrefix, 0u) == 0u)
+        {
+            const std::string Value = Argument.substr(InstrumentationPrefix.size());
+            if (Value == "full") Instrumentation = HTNGeneratedInstrumentation::Full;
+            else if (Value == "none") Instrumentation = HTNGeneratedInstrumentation::None;
+            else
+            {
+                std::cerr << "HTNTranslator: unknown instrumentation mode '" << Value << "'.\n";
+                return 1;
+            }
+            continue;
+        }
 
         if (Argument.rfind(PolicyPrefix, 0u) == 0u)
         {
@@ -196,6 +219,7 @@ int main(int argc, char** argv)
     Request.RuntimeBacktrackingSupport = RuntimeBacktrackingSupport;
     Request.BacktrackingCapacity = BacktrackingCapacity;
     Request.CallFrameCapacity = CallFrameCapacity;
+    Request.Instrumentation = Instrumentation;
 
     HTNTranslationResult Result;
     if (!HTNTranslateDomain(Request, Result))
@@ -213,5 +237,21 @@ int main(int argc, char** argv)
               << "  Runtime backtracking support: "
               << (RuntimeBacktrackingSupport == HTNGeneratedRuntimeBacktrackingSupport::Enabled ? "enabled" : "disabled") << "\n"
               << "  Output: " << Result.OutputSourcePath.string() << "\n";
+    if (PrintCodeStatistics)
+    {
+        const auto PrintSize = [](const char* Name, const HTNGeneratedCodeSize& Size) {
+            std::cout << "  " << Name << ": " << Size.Bytes << " bytes, " << Size.LineBreaks << " line breaks\n";
+        };
+        const auto& Stats = Result.CodeStatistics;
+        std::cout << "Generated C statistics (before preprocessing; instrumentation="
+                  << (Instrumentation == HTNGeneratedInstrumentation::Full ? "full" : "none") << "):\n";
+        PrintSize("Logic/support", Stats.Logic);
+        PrintSize("Debugger", Stats.Debugger);
+        PrintSize("Profiling", Stats.Profiling);
+        PrintSize("Total emitted", {Stats.Logic.Bytes + Stats.Debugger.Bytes + Stats.Profiling.Bytes,
+            Stats.Logic.LineBreaks + Stats.Debugger.LineBreaks + Stats.Profiling.LineBreaks});
+        PrintSize("Omitted debugger", Stats.OmittedDebugger);
+        PrintSize("Omitted profiling", Stats.OmittedProfiling);
+    }
     return 0;
 }

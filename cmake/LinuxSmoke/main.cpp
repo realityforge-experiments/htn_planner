@@ -16,6 +16,7 @@ int main()
     WorldState.AddFact("candidate", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{1})});
     WorldState.AddFact("candidate", std::vector<HTNAtomOwner>{HTNAtomOwner(int32{2})});
     HTNCallTermRegistry Registry;
+    Registry.Bind("identity", [](const HTNCallTermArguments& Args) { return HTNAtomOwner(Args[0]); });
     HTNCallTermBindingContext Bindings(Registry);
     void* Prepared = ::operator new(Definition->prepared_storage_size, std::nothrow);
     void* Execution = ::operator new(Definition->execution_storage_size, std::nothrow);
@@ -61,11 +62,25 @@ int main()
             HTNAtom::sDestroy(Plan);
             HTNAtom::sDestroy(Call);
         }
+        for (const int Id : {7, 9})
+        {
+            HTNAtomOwner Call(HTNAtom::sCreateCall(HtnSymbol::sGetSymbol("runtime_list"), Id));
+            HTNAtomOwner Plan;
+            const auto Status = Definition->decompose_call(&Context, Call.Get(), 1, Plan.Get());
+            if (Status != HTN_DECOMPOSITION_SUCCEEDED || Plan.GetListSize() != 1) Result = 4;
+            else
+            {
+                const auto& List = HTNAtomGetListElement(HTNAtomGetListElement(*Plan.Get(), 0), 1);
+                const std::string Expected = "(target " + std::to_string(Id) + " " + std::to_string(Id + 1) +
+                    " (position " + std::to_string(Id) + "))";
+                if (HTNAtomToString(List, true) != Expected) Result = 5;
+            }
+        }
     }
     if (ExecutionReady) Definition->destroy_execution_storage(Execution);
     if (PreparedReady) Definition->destroy_prepared_storage(Prepared);
     ::operator delete(Execution);
     ::operator delete(Prepared);
-    if (Result == 0) std::puts("PASS: generated C arithmetic, axiom backtracking, failure and planner reuse");
+    if (Result == 0) std::puts("PASS: generated C arithmetic, runtime lists, axiom backtracking, failure and planner reuse");
     return Result;
 }

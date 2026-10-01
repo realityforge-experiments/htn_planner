@@ -21,7 +21,7 @@ struct Node
     const HTNSourceRange& GetSourceRange() const { return Range; }
 };
 
-enum class ValueKind : uint8_t { Identifier, Literal, Variable, Constant, Call, Arithmetic };
+enum class ValueKind : uint8_t { Identifier, Literal, Variable, Constant, Call, Arithmetic, RuntimeList };
 enum class ArithmeticOperator : uint8_t { Add, Subtract, Multiply, Divide, Modulo, Increment, Decrement };
 struct Value : Node
 {
@@ -31,6 +31,7 @@ struct Value : Node
     std::vector<std::shared_ptr<const Value>> CallArguments;
     ArithmeticOperator ArithmeticOp = ArithmeticOperator::Add;
     std::vector<std::shared_ptr<const Value>> ArithmeticOperands;
+    std::vector<std::shared_ptr<const Value>> ListElements;
     const HTNAtom& GetValue() const { return *Atom.Get(); }
     ValueKind GetExpressionType() const { return Kind; }
     const auto& GetIDNode() const { return CallId; }
@@ -88,6 +89,9 @@ struct Branch : Node
 };
 struct Method : Node
 {
+    // The linker preserves the immutable declaration behind a qualified alias.
+    // This is compiler-only provenance, not a runtime reference or name lookup.
+    std::shared_ptr<const Method> OriginalDeclaration;
     std::string Id;
     std::vector<ValuePtr> Parameters;
     std::vector<std::shared_ptr<const Branch>> Branches;
@@ -101,6 +105,7 @@ struct Method : Node
 };
 struct Axiom : Node
 {
+    std::shared_ptr<const Axiom> OriginalDeclaration;
     std::string Id;
     bool IsBase = false;
     std::string OverridesDomain;

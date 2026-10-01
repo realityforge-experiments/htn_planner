@@ -27,14 +27,15 @@ The repository includes:
 - An editor, language server, hot reload example, tests and benchmarks.
 - A packageable Windows x64 SDK with CMake integration.
 
-Version **2.0.4** removes native method/task recursion from generated planners,
-extends callterm error reporting and fixes axiom output assignments/backtracking.
-**It changes the public callterm error API and generated/runtime bridge ABIs
-despite the patch version.** Migrate client configuration, regenerate domains
-and rebuild the host, libraries and domain DLLs together.
-See the [2.0.4 release notes and migration guide](docs/RELEASE_2_0_4.md).
-When upgrading from 2.0.2 or earlier, also follow the
-[2.0.3 migration guide](docs/RELEASE_2_0_3.md).
+Version **2.1.0 is being prepared** with runtime list expressions, explicit
+diagnostics for non-boolean callterm conditions, and smaller generated C through
+shared implementations, reachability analysis and optional instrumentation.
+The C runtime ABI is unchanged from 2.0.4. Regenerate and recompile domains to
+use the new features and reductions; rebuild clients using the C++ compiler APIs.
+See the [2.1.0 release notes](docs/RELEASE_2_1_0.md).
+Upgrades from older releases must also follow the
+[2.0.4 migration guide](docs/RELEASE_2_0_4.md) and, for 2.0.2 or earlier,
+the [2.0.3 migration guide](docs/RELEASE_2_0_3.md).
 
 ## Domain example
 
@@ -278,6 +279,10 @@ See [CI validation](CI.md) for the repository build matrix.
 
 ## Documentation
 
+Start with the [domain language guide](docs/DOMAIN_LANGUAGE.md): a complete example
+followed by syntax, facts, methods, axioms, assignment, operators, callterms,
+lists, includes, backtracking and deferred decomposition.
+
 The [documentation index](docs/README.md) links the compiler architecture,
 generated debugger, SDK distribution and release guides. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and
@@ -288,7 +293,8 @@ generated debugger, SDK distribution and release guides. See
 The generated planner, compiler pipeline and public release are developed and
 maintained by [Jose Antonio Escribano](https://github.com/urosidoki). The shared
 2023 foundation retained in the core, parsing, world-state and integration layers
-was co-authored with [Sandra Alvarez](https://github.com/Sandruski).
+was co-authored with [Sandra Alvarez](https://github.com/Sandruski)
+([HTN planner repository](https://github.com/Sandruski/htn-planner)).
 
 See [CONTRIBUTORS.md](CONTRIBUTORS.md) and [NOTICE.md](NOTICE.md) for contributor
 credits and formal copyright attribution.

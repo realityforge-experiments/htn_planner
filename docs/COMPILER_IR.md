@@ -11,7 +11,8 @@ flowchart LR
     AST --> Validator["Validation and linking"]
     Validator --> Builder["HTNCompilerIRBuilder"]
     Builder --> IR["HTNCompilerIR"]
-    IR --> Generator["HTNCCodeGenerator"]
+    IR --> Reachability["Reachability analysis"]
+    Reachability --> Generator["HTNCCodeGenerator"]
     Generator --> C["Generated C"]
     C --> Native["Native planner definition"]
 ```
@@ -26,7 +27,8 @@ Each stage has one responsibility:
    traverse includes and select effective and qualified declarations in include order.
 4. `HTNCompilerIRBuilder` resolves compile-time references and lowers the linked AST
    into the representation needed by code generation.
-5. `HTNCCodeGenerator` emits C and static metadata from the completed IR.
+5. `HTNCompilerReachability` marks executable declarations from the resolved IR;
+   `HTNCCodeGenerator` emits their C and preserves static metadata.
 6. The platform C compiler produces the native planner definition consumed by the
    runtime.
 
@@ -64,6 +66,72 @@ Generated debug metadata preserves those ranges for debugger nodes. This changes
 the layout of debug metadata, so the debug planner ABI versions advance to
 `0x48550002` (debug) and `0x48570002` (debug with profiling). Plain and
 profiling builds without debug retain their ABI versions.
+
+## Shared qualified implementations
+
+The compiler linker records the original immutable declaration behind a qualified
+method or axiom alias. For example, `Wanderer::behave` and the effective `behave`
+may identify the same declaration; a base implementation and a derived override
+identify different declarations. Equality of names, source text or function
+length is not sufficient to share an implementation.
+
+The IR builder lowers a linked declaration once, reusing its parameters, variable
+slots, branches, tasks and conditions for its callable aliases. Method records
+retain separate names, source ranges, top-level/dispatch visibility and an internal
+`ImplementationIndex`. Axiom aliases retain separate identities while sharing
+their lowered condition. The builder verifies that the linked alias still shares
+the original parameter/body nodes before reusing it. AST pointers are used only
+while building the IR; the completed IR owns its data and retains no AST references.
+
+The C emitter writes one method body per implementation. With full instrumentation,
+small generated wrappers pass the called method's metadata index to the shared
+body, including when a suspended frame resumes. This preserves qualified names,
+parameter watches and source locations without duplicating the branch/task code.
+With instrumentation omitted, callers address the body directly and those wrappers
+are absent. Wrappers add no planner frame, mutable global state or runtime component;
+method/task recursion still uses the generated iterative dispatcher.
+
+Implementation sharing alone does not prune unreachable declarations or change name/arity,
+override or deferred-call resolution. It preserves callterm registration validation
+and source diagnostics. The generated C/runtime ABI, descriptor layout and external
+function signatures are unchanged. Rebuild compiler/tooling C++ clients and regenerate
+and recompile domains to obtain smaller output; old generated domains remain usable
+with their matching runtime ABI.
+
+The engine Wanderer measurement and regression coverage are recorded in
+[generated source size accounting](GENERATED_INSTRUMENTATION.md#shared-implementation-reduction).
+
+## Reachability before emission
+
+`HTNAnalyzeCompilerReachability` traverses resolved IR with iterative worklists.
+Every `top_level_method` is a root, including public overloads and entries with no
+domain callers. All other existing external dispatch entries are also roots:
+deferred targets remain callable even when their producer is unused. Qualified
+aliases keep their existing visibility; the linker does not make them public
+automatically. Name and arity select the exact target for compound/deferred calls.
+
+The traversal marks shared implementations, all their branches/tasks, condition
+children and referenced axiom bodies. Visited masks terminate self/mutual cycles.
+A reachable alias keeps its canonical body even if the canonical qualified name
+itself is unreachable. Instrumented bodies with one surviving identity use that
+identity directly; multiple surviving identities retain their thin wrappers.
+
+The emitter omits unreachable method bodies, wrappers, tasks, continuation helpers
+and their fact/axiom helpers. Arithmetic and comparison helpers are emitted only
+when reachable expressions need them. This is conservative declaration reachability:
+it does not predict world-state values or discard branches based on runtime facts.
+
+IR indices, debugger/source tables, prepared data, fact names and the complete
+callterm requirement list remain intact. Initialization validation therefore still
+reports missing callterms in unused declarations. Exported entry points and
+descriptor lifecycle/accessor callbacks are retained. Further prepared-data and
+snapshot reduction is a separate phase.
+
+There is no public C API/ABI change or additional runtime component. Regenerate
+and recompile domains to benefit; existing generated modules remain compatible.
+New opaque execution-storage sizes are obtained through the existing descriptor.
+
+See [reachability measurements and tests](GENERATED_INSTRUMENTATION.md#reachability-reduction).
 
 The same source ranges are emitted as optional generated debug metadata. When
 `HTN_DEBUG_DECOMPOSITION` is enabled, generated execution events use that metadata to

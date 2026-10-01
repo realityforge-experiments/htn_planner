@@ -50,5 +50,17 @@ add_custom_command(OUTPUT "${GENERATED}"
 add_executable(HTNLinuxSmoke "${CMAKE_CURRENT_LIST_DIR}/main.cpp" "${GENERATED}")
 target_link_libraries(HTNLinuxSmoke PRIVATE HTNFramework)
 add_test(NAME generated_execution COMMAND HTNLinuxSmoke)
+
+# Compile the same consumer against a domain with all optional instrumentation
+# omitted by the translator, even when the host is an instrumented Debug build.
+set(GENERATED_NONE "${CMAKE_CURRENT_BINARY_DIR}/generated-none/linux_smoke.generated.c")
+add_custom_command(OUTPUT "${GENERATED_NONE}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated-none"
+    COMMAND HTNTranslator "${DOMAIN}" CreateLinuxSmokeHTN "${CMAKE_CURRENT_BINARY_DIR}/generated-none"
+        --runtime-backtracking-support=enabled --instrumentation=none
+    DEPENDS HTNTranslator "${DOMAIN}" VERBATIM)
+add_executable(HTNLinuxSmokeNone "${CMAKE_CURRENT_LIST_DIR}/main.cpp" "${GENERATED_NONE}")
+target_link_libraries(HTNLinuxSmokeNone PRIVATE HTNFramework)
+add_test(NAME generated_execution_none COMMAND HTNLinuxSmokeNone)
 add_test(NAME translator_check COMMAND HTNTranslator --check "${DOMAIN}")
 add_test(NAME translator_includes COMMAND HTNTranslator --check "${HTN_ROOT}/Domains/AAACombatNPC.domain")

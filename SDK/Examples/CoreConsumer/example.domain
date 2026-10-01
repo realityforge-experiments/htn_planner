@@ -1,5 +1,8 @@
 (:domain PackageCoreConsumer top_level_domain
 
+    (:method (boolean_condition) top_level_method
+        (branch (and (call condition_value)) ((!checked))))
+
     (:method (run) top_level_method
         (branch
             ()

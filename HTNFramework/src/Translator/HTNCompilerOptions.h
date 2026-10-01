@@ -15,3 +15,11 @@ enum class HTNGeneratedRuntimeBacktrackingSupport
     Disabled,
     Enabled
 };
+
+// Full preserves optional debugger/profiler code for the C compiler to configure.
+// None omits it at translation time, independent of the runtime build variant.
+enum class HTNGeneratedInstrumentation
+{
+    Full,
+    None
+};

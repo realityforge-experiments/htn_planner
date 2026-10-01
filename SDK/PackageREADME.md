@@ -1,13 +1,19 @@
 # HTN SDK
 
-Version 2.0.4 adds generated iterative recursion, unified callterm errors and
-axiom output assignments. **The callterm API and planner/RuntimeBridge ABIs
-change despite the patch version.** Regenerate all domains and rebuild the
-host, libraries and modules using this package. Replace any earlier 2.0.4 candidate.
-See [2.0.4 migration](docs/RELEASE_2_0_4.md). For upgrades from 2.0.2 or earlier,
-also follow [2.0.3 migration](docs/RELEASE_2_0_3.md).
+Version 2.1.0 adds runtime list expressions, non-boolean callterm diagnostics,
+generated implementation sharing, unreachable-code removal, and translator
+options `--instrumentation=full|none` and `--code-stats`.
+The C ABI and atom layout are unchanged from 2.0.4. Regenerate and recompile
+domains to use the new behavior. Rebuild clients of the C++ compiler APIs and
+handle `HTNCallTermErrorReason::NonBooleanConditionResult` in error callbacks.
+See [2.1.0 compatibility and migration](docs/RELEASE_2_1_0.md).
+For upgrades from older releases, also follow [2.0.4 migration](docs/RELEASE_2_0_4.md)
+and, when starting from 2.0.2 or earlier, [2.0.3 migration](docs/RELEASE_2_0_3.md).
 
 Windows x64, MSVC v143, C++20 clients and C11 generated domains.
+
+New to authoring domains? Start with the [domain language guide](docs/DOMAIN_LANGUAGE.md),
+which includes a complete example and the syntax/execution reference.
 
 The eight variant IDs combine `Static` or `Dynamic` CRT linkage, `Debug` or
 `Release` CRT, and `Plain` or `Instrumented` HTN execution. For example,

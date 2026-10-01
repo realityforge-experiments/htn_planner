@@ -58,6 +58,16 @@ std::string FormatDomainValueExpression(const AST::Value& inNode)
         return "?" + HTNAtomToString(Value, false);
     case AST::ValueKind::Constant:
         return "@" + HTNAtomToString(Value, false);
+    case AST::ValueKind::RuntimeList:
+    {
+        std::string Result = "(";
+        for (const auto& Element : inNode.ListElements)
+        {
+            if (Result.size() > 1u) Result += " ";
+            Result += FormatDomainValueExpression(*Element);
+        }
+        return Result + ")";
+    }
     case AST::ValueKind::Call:
     {
         std::string Result = "(call " + FormatDomainValueExpression(*inNode.GetIDNode());
@@ -158,6 +168,7 @@ HTNIRValueKind LowerValueKind(AST::ValueKind inKind)
     case AST::ValueKind::Constant: return HTNIRValueKind::Constant;
     case AST::ValueKind::Call: return HTNIRValueKind::Call;
     case AST::ValueKind::Arithmetic: return HTNIRValueKind::Arithmetic;
+    case AST::ValueKind::RuntimeList: return HTNIRValueKind::RuntimeList;
     }
     return HTNIRValueKind::Literal;
 }
@@ -191,28 +202,68 @@ public:
             }
         }
 
+        std::unordered_map<const AST::Axiom*, uint32> AxiomDeclarations;
         for (const auto& AxiomNode : Domain.GetAxiomNodes())
         {
             AxiomRecord Record;
+            const AST::Axiom* Declaration = AxiomNode.get();
+            if (AxiomNode->OriginalDeclaration &&
+                AxiomNode->Parameters == AxiomNode->OriginalDeclaration->Parameters &&
+                AxiomNode->Body == AxiomNode->OriginalDeclaration->Body)
+                Declaration = AxiomNode->OriginalDeclaration.get();
+            const auto Existing = AxiomDeclarations.find(Declaration);
+            if (Existing != AxiomDeclarations.end())
+                Record = Axioms[Existing->second];
+            else
+            {
+                AxiomDeclarations.emplace(Declaration, static_cast<uint32>(Axioms.size()));
+                Record.FirstParameter = static_cast<uint32>(Values.size());
+                for (const auto& Parameter : AxiomNode->GetParameterNodes()) AddValue(*Parameter);
+                Record.ParameterCount = static_cast<uint32>(Values.size()) - Record.FirstParameter;
+                Record.Condition = AddCondition(AxiomNode->GetConditionNode());
+                BuildAxiomVariableSlotMask(Record);
+            }
             Record.Id = Strings.Add(AxiomNode->GetID());
             SetSource(Record, *AxiomNode);
-            Record.FirstParameter = static_cast<uint32>(Values.size());
-            for (const auto& Parameter : AxiomNode->GetParameterNodes()) AddValue(*Parameter);
-            Record.ParameterCount = static_cast<uint32>(Values.size()) - Record.FirstParameter;
-            Record.Condition = AddCondition(AxiomNode->GetConditionNode());
-            BuildAxiomVariableSlotMask(Record);
             Axioms.push_back(Record);
         }
 
+        std::unordered_map<const AST::Method*, uint32> MethodDeclarations;
         for (const auto& MethodNode : Domain.GetMethodNodes())
         {
             MethodRecord Record;
+            const AST::Method* Declaration = MethodNode.get();
+            if (MethodNode->OriginalDeclaration &&
+                MethodNode->Parameters == MethodNode->OriginalDeclaration->Parameters &&
+                MethodNode->Branches == MethodNode->OriginalDeclaration->Branches)
+                Declaration = MethodNode->OriginalDeclaration.get();
+            const auto Existing = MethodDeclarations.find(Declaration);
+            if (Existing != MethodDeclarations.end())
+                Record = Methods[Existing->second];
+            else
+            {
+                Record.ImplementationIndex = static_cast<uint32>(Methods.size());
+                MethodDeclarations.emplace(Declaration, Record.ImplementationIndex);
+                Record.FirstParameter = static_cast<uint32>(Values.size());
+                for (const auto& Parameter : MethodNode->GetParameterNodes()) AddValue(*Parameter);
+                Record.ParameterCount = static_cast<uint32>(Values.size()) - Record.FirstParameter;
+                Record.FirstBranch = static_cast<uint32>(Branches.size());
+                for (const auto& BranchNode : MethodNode->GetBranchNodes())
+                {
+                    BranchRecord Branch;
+                    Branch.Id = Strings.Add(BranchNode->GetID());
+                    SetSource(Branch, *BranchNode);
+                    Branch.Condition = AddCondition(BranchNode->GetPreConditionNode());
+                    Branch.FirstTask = static_cast<uint32>(Tasks.size());
+                    for (const auto& TaskNode : BranchNode->GetTaskNodes()) AddTask(*TaskNode);
+                    Branch.TaskCount = static_cast<uint32>(Tasks.size()) - Branch.FirstTask;
+                    Branches.push_back(Branch);
+                }
+                Record.BranchCount = static_cast<uint32>(Branches.size()) - Record.FirstBranch;
+                BuildMethodVariableSlotMask(Record);
+            }
             Record.Id = Strings.Add(MethodNode->GetID());
             SetSource(Record, *MethodNode);
-            Record.FirstParameter = static_cast<uint32>(Values.size());
-            for (const auto& Parameter : MethodNode->GetParameterNodes()) AddValue(*Parameter);
-            Record.ParameterCount = static_cast<uint32>(Values.size()) - Record.FirstParameter;
-            Record.FirstBranch = static_cast<uint32>(Branches.size());
             Record.IsTopLevel = MethodNode->IsTopLevel() ? 1u : 0u;
             // Public top-level visibility and generated dispatchability are separate concepts.
             // Deferred-call targets will set IsExternallyDecomposable without becoming top-level methods.
@@ -220,20 +271,6 @@ public:
             if (Record.IsExternallyDecomposable)
                 AllocatePreparedSymbolSlot(Record.Id);
 
-            for (const auto& BranchNode : MethodNode->GetBranchNodes())
-            {
-                BranchRecord Branch;
-                Branch.Id = Strings.Add(BranchNode->GetID());
-                SetSource(Branch, *BranchNode);
-                Branch.Condition = AddCondition(BranchNode->GetPreConditionNode());
-                Branch.FirstTask = static_cast<uint32>(Tasks.size());
-                for (const auto& TaskNode : BranchNode->GetTaskNodes()) AddTask(*TaskNode);
-                Branch.TaskCount = static_cast<uint32>(Tasks.size()) - Branch.FirstTask;
-                Branches.push_back(Branch);
-            }
-
-            Record.BranchCount = static_cast<uint32>(Branches.size()) - Record.FirstBranch;
-            BuildMethodVariableSlotMask(Record);
             Methods.push_back(Record);
         }
 
@@ -295,10 +332,10 @@ public:
         return Slot;
     }
 
-    ValueRecord MakeValueRecord(const AST::Value& inNode)
+    ValueRecord MakeValueRecord(const AST::Value& inNode, bool inRuntimeList = false)
     {
         ValueRecord Record;
-        if (inNode.Kind == AST::ValueKind::Call)
+        if (inNode.Kind == AST::ValueKind::Call && !inRuntimeList)
         {
             const std::string File = inNode.FileIndex < SourceFiles.size() ? SourceFiles[inNode.FileIndex] : "<domain>";
             SetError(File + "(" + std::to_string(inNode.Range.Begin.Line) + "," +
@@ -319,6 +356,18 @@ public:
         else if (Record.AtomType == HTN_ATOM_TYPE_LIST) Record.ListElement = AddListElement(inNode.GetValue());
         else if (Record.AtomType == HTN_ATOM_TYPE_SYMBOL) AllocatePreparedSymbolSlot(Record.Text);
         SetSource(Record, inNode);
+        if (Record.Kind == HTNIRValueKind::RuntimeList || Record.Kind == HTNIRValueKind::Call)
+        {
+            Record.RuntimeExpression = static_cast<uint32>(RuntimeExpressions.size());
+            RuntimeExpressions.emplace_back();
+            HTNIRRuntimeExpression Expression;
+            Expression.Source = Record.Source;
+            if (Record.Kind == HTNIRValueKind::Call)
+                Expression.CallTermSlot = AllocateCallTermSlot(Record.Text);
+            const auto& Children = Record.Kind == HTNIRValueKind::Call ? inNode.CallArguments : inNode.ListElements;
+            for (const auto& Child : Children) Expression.Children.push_back(MakeValueRecord(*Child, true));
+            RuntimeExpressions[Record.RuntimeExpression] = std::move(Expression);
+        }
         if (Record.Kind == HTNIRValueKind::Variable && Record.Text < Strings.Values.size() &&
             !Strings.Values[Record.Text].starts_with("any_"))
         {
@@ -333,7 +382,7 @@ public:
             ArithmeticExpressions[Record.ArithmeticExpression].Operands.reserve(inNode.GetArithmeticOperandNodes().size());
             for (const auto& Operand : inNode.GetArithmeticOperandNodes())
             {
-                ValueRecord OperandRecord = MakeValueRecord(*Operand);
+                ValueRecord OperandRecord = MakeValueRecord(*Operand, inRuntimeList);
                 ArithmeticExpressions[Record.ArithmeticExpression].Operands.push_back(std::move(OperandRecord));
             }
         }
@@ -377,6 +426,26 @@ public:
     ValueRecord BuildTaskArgument(const AST::Value& inNode,
                                   std::vector<TaskCallExpressionRecord>& ioCalls)
     {
+        if (inNode.Kind == AST::ValueKind::RuntimeList)
+        {
+            TaskCallExpressionRecord Evaluation;
+            Evaluation.IsRuntimeValue = true;
+            Evaluation.RuntimeValue = MakeValueRecord(inNode);
+            Evaluation.DomainExpression = FormatDomainValueExpression(inNode);
+            SetSource(Evaluation, inNode);
+            const uint32 Hidden = Strings.Add("__task_list_result_" + std::to_string(SyntheticTaskCallCount++));
+            DebugInternalVariableStringIds.insert(Hidden);
+            Evaluation.OutputSlot = AllocateVariableSlot(Hidden);
+            ValueRecord Result;
+            Result.Kind = HTNIRValueKind::Variable;
+            Result.Text = Hidden;
+            Result.DebugText = Strings.Add(Evaluation.DomainExpression);
+            Result.VariableSlot = Evaluation.OutputSlot;
+            Result.DebugAsVariable = false;
+            SetSource(Result, inNode);
+            ioCalls.push_back(std::move(Evaluation));
+            return Result;
+        }
         if (inNode.Kind == AST::ValueKind::Arithmetic)
         {
             AST::Value Shell = inNode;
@@ -434,6 +503,9 @@ public:
 
     bool HasNestedAssignmentCall(const AST::ValuePtr& inValue, bool inRoot = true) const
     {
+        // Runtime lists evaluate their own children in source order. Lower the whole
+        // value into one temporary for contexts that otherwise take atom references.
+        if (inValue->Kind == AST::ValueKind::RuntimeList) return !inRoot;
         if (!inRoot && inValue->Kind == AST::ValueKind::Call) return true;
         for (const auto& Argument : inValue->CallArguments)
             if (HasNestedAssignmentCall(Argument, false)) return true;
@@ -480,7 +552,7 @@ public:
             auto One = std::make_shared<AST::Value>();
             One->Atom = HTNAtomOwner(int32{1});
             auto Prepared = PrepareAssignmentExpression(Operand, outPrefix);
-            if (Prepared->Kind == AST::ValueKind::Call)
+            if (Prepared->Kind == AST::ValueKind::Call || Prepared->Kind == AST::ValueKind::RuntimeList)
                 Prepared = CaptureAssignmentValue(Prepared, outPrefix);
             Checked->ArithmeticOperands = {Prepared, One};
             Operand = CaptureAssignmentValue(Checked, outPrefix);
@@ -693,6 +765,7 @@ public:
         for (const TaskCallExpressionRecord& Call : TaskCallExpressions[inTaskIndex])
         {
             MarkVariableSlot(ioMask, Call.OutputSlot);
+            if (Call.IsRuntimeValue) MarkVariableSlot(ioMask, Call.RuntimeValue);
             for (const ValueRecord& Argument : Call.Arguments)
                 MarkVariableSlot(ioMask, Argument);
         }
@@ -837,7 +910,8 @@ bool ResolveCompileTimeReferences(Builder& ioBuilder)
     const auto AllocateStaticValue = [&ioBuilder](ValueRecord& Value)
     {
         Value.StaticValueIndex = kNoIndex;
-        if (Value.Kind == HTNIRValueKind::Variable || Value.Kind == HTNIRValueKind::Arithmetic)
+        if (Value.Kind == HTNIRValueKind::Variable || Value.Kind == HTNIRValueKind::Arithmetic ||
+            Value.Kind == HTNIRValueKind::RuntimeList || Value.Kind == HTNIRValueKind::Call || Value.Kind == HTNIRValueKind::Constant)
             return;
         Value.StaticValueIndex = static_cast<uint32>(ioBuilder.StaticValues.size());
         StaticValueRecord StaticValue;
@@ -856,6 +930,10 @@ bool ResolveCompileTimeReferences(Builder& ioBuilder)
         for (TaskCallExpressionRecord& Call : TaskCalls)
             for (ValueRecord& Value : Call.Arguments)
                 AllocateStaticValue(Value);
+    for (auto& Expression : ioBuilder.RuntimeExpressions)
+        for (auto& Child : Expression.Children) AllocateStaticValue(Child);
+    for (auto& Expression : ioBuilder.ArithmeticExpressions)
+        for (auto& Operand : Expression.Operands) AllocateStaticValue(Operand);
 
     // Axiom names are also compile-time references. Store the exact axiom index
     // on the generated condition so generated axiom scope code never scans metadata.

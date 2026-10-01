@@ -3,6 +3,27 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
+## 2.1.0 - In preparation
+
+- Add a [domain language tutorial and reference](docs/DOMAIN_LANGUAGE.md),
+  also included in the SDK, with translator-checked examples.
+- Build owned runtime lists from variables, arithmetic, callterms and nested
+  lists wherever a value is accepted. Preserve static literal storage,
+  evaluation order, backtracking, deferred capture and failure cleanup.
+- Report `NonBooleanConditionResult` through the existing callterm error policy
+  when an independent callterm condition returns a non-boolean value. No truthiness
+  conversions are added; boolean false remains an ordinary condition failure.
+- Add `--instrumentation=full|none` (default full) and `--code-stats` to the
+  translator. None omits optional generated debugger/profiling code while
+  preserving validation, ownership, error reporting and the selected C ABI.
+- Share implementations of qualified method/axiom aliases and omit unreachable
+  generated implementations. Preserve every top-level method and deferred entry,
+  exact name/arity dispatch, overrides and debugger identities.
+- **Compatibility:** no C runtime ABI, RuntimeBridge ABI or atom-layout change
+  from 2.0.4. Rebuild clients using the extended C++ compiler interfaces;
+  regenerate/recompile domains to gain the new behavior and size reductions.
+  See [2.1.0 release notes](docs/RELEASE_2_1_0.md).
+
 ## 2.0.4 - 2026-09-30
 
 **Breaking compatibility despite the patch version:** migrate the callterm error

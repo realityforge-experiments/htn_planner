@@ -214,12 +214,14 @@ bool BuildCompilerDomain(const CompilerSourceCollection& inLinked,
         for (const auto& Axiom : Module.Axioms)
         {
             auto Qualified = std::make_shared<AST::Axiom>(*Axiom);
+            Qualified->OriginalDeclaration = Axiom;
             Qualified->Id = Module.Id + "::" + Axiom->Id;
             outResult.Domain.Axioms.push_back(std::move(Qualified));
         }
         for (const auto& Method : Module.Methods)
         {
             auto Qualified = std::make_shared<AST::Method>(*Method);
+            Qualified->OriginalDeclaration = Method;
             Qualified->Id = Module.Id + "::" + Method->Id;
             Qualified->TopLevel = false;
             outResult.Domain.Methods.push_back(std::move(Qualified));

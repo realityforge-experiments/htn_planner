@@ -1,0 +1,88 @@
+// Copyright (c) 2026 Jose Antonio Escribano joseantonioescribanoayllon@gmail.com
+(:domain RuntimeLists top_level_domain
+    (:constants defaults (list_tag query))
+
+    (:method (run ?inp_entity_id) top_level_method
+        (branch
+            (and (call ppr_start (find_closest_location_to_entity ?inp_entity_id)))
+            ((!result ?inp_entity_id))))
+
+    (:method (static) top_level_method
+        (branch () ((!result (query_extent_y (1.0 1.0 1.0))))))
+
+    (:method (variables ?inp_entity_id ?inp_position) top_level_method
+        (branch () ((!result (action ?inp_entity_id ?inp_position)))))
+
+    (:method (arithmetic ?inp_index) top_level_method
+        (branch () ((!result (math (+ ?inp_index 2) (- ?inp_index 2) (* ?inp_index 2)
+            (/ ?inp_index 2) (% ?inp_index 2) (++ ?inp_index) (-- ?inp_index))))))
+
+    (:method (calls ?inp_entity_id) top_level_method
+        (branch () ((!result (target ?inp_entity_id (call get_entity_position ?inp_entity_id))))))
+
+    (:method (nested ?inp_entity_id) top_level_method
+        (branch () ((!result (action (target ?inp_entity_id) (movement (1.0 2.0 3.0) (call get_entity_position ?inp_entity_id))
+            (metadata current_time (call get_time)) (@list_tag ?inp_entity_id))))))
+
+    (:method (assignment ?inp_entity_id) top_level_method
+        (branch (and (= ?value (target ?inp_entity_id (call get_entity_position ?inp_entity_id)))) ((!result ?value))))
+
+    (:method (fact ?inp_entity_id) top_level_method
+        (branch (and (list_fact (key ?inp_entity_id)) (== (key ?inp_entity_id) (key 7))
+            (split_list_front (key ?inp_entity_id) ?head ?tail)) ((!result ?head ?tail))))
+
+    (:method (axiom_list ?inp_entity_id) top_level_method
+        (branch (and (#echo (key ?inp_entity_id) ?list)) ((!result ?list))))
+    (:axiom (echo ?inp_list ?out_list) (and (= ?out_list (wrapped ?inp_list))))
+
+    (:method (compound ?inp_entity_id) top_level_method
+        (branch () ((emit (key ?inp_entity_id)))))
+    (:method (emit ?inp_value) (branch () ((!result ?inp_value))))
+
+    (:method (plan_markers ?inp_entity_id) top_level_method
+        (branch () ((!begin_plan (key ?inp_entity_id)) (!end_plan))))
+
+    (:method (deferred ?inp_entity_id) top_level_method
+        (branch () ((&later (snapshot ?inp_entity_id (call get_time))))))
+    (:method (later ?inp_snapshot)
+        (branch () ((!result (captured ?inp_snapshot (call get_time))))))
+
+    (:method (backtracking) top_level_method
+        (branch (and (entity ?entity_id) (= ?value (target ?entity_id (call get_entity_position ?entity_id)))
+            (selected ?value)) ((!result ?value))))
+    (:method (axiom_backtracking) top_level_method
+        (branch (and (#choose ?value) (list_fact ?value)) ((!result ?value))))
+    (:axiom (choose ?out_value) (and (entity ?entity_id) (= ?out_value (key ?entity_id))))
+
+    (:method (unbound) top_level_method
+        (branch (and (#unbound_list ?value ?list)) ((!result ?list))))
+    (:axiom (unbound_list ?io_value ?out_list)
+        (and (= ?out_list (action ?io_value (call count_after)))))
+
+    (:method (missing) top_level_method
+        (branch (and (call ppr_start (target (call missing_runtime_list) (call count_after)))) ((!result))))
+    (:method (failed) top_level_method
+        (branch (and (call ppr_start (target (call failing_runtime_list) (call count_after)))) ((!result))))
+    (:method (failed_task) top_level_method
+        (branch () ((!result (target (call failing_runtime_list) (call count_after))))))
+    (:method (failed_arithmetic) top_level_method
+        (branch () ((!result (target (/ 1 0) (call count_after))))))
+    (:method (mutation ?inp_entity_id) top_level_method
+        (branch (and (= ?value (target (call add_fact ?inp_entity_id))) (added ?inp_entity_id)) ((!result ?value))))
+    (:method (fallback) top_level_method
+        (invalid (and (call ppr_start (target (call failing_runtime_list)))) ((!bad)))
+        (valid () ((!result fallback))))
+    (:method (nested_call ?inp_entity_id) top_level_method
+        (branch () ((!result (call identity (target ?inp_entity_id (call get_entity_position ?inp_entity_id)))))))
+    (:method (arithmetic_call ?inp_index) top_level_method
+        (branch () ((!result (sum (+ (call identity ?inp_index) 2))))))
+    (:method (bad_numeric_operand) top_level_method
+        (branch () ((!result (bad (+ bad_type (call count_after)))))))
+    (:method (bad_list_operand ?inp_id) top_level_method
+        (branch (and (= ?number (+ (key ?inp_id) 1))) ((!result ?number))))
+    (:method (bound_io) top_level_method
+        (branch (and (= ?value (original 1)) (#assign_io ?value)) ((!result ?value))))
+    (:axiom (assign_io ?io_list) (and (= ?io_list (target (call count_after)))))
+    (:method (owned_failure ?inp_id) top_level_method
+        (branch () ((!result (partial (call get_entity_position ?inp_id) (call failing_runtime_list))))))
+)

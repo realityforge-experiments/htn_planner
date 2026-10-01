@@ -123,6 +123,11 @@ Copy-PackageFile "$RepositoryRoot/docs/SDK_VARIANTS.md" 'docs/SDK_VARIANTS.md'
 foreach ($document in @('RELEASE_2_0_0.md', 'RELEASE_NOTES_WRITE_FACT.md', 'USE_CASES.md', 'TYPE_CONVERSION.md', 'MISSING_CALLTERMS.md', 'METHOD_OVERLOADS.md', 'AXIOM_OVERLOADS.md', 'AAA_COMBAT_NPC_DEMO.md', 'ASSIGNMENT.md', 'RELEASE_2_0_3.md', 'RELEASE_NOTES_NESTED_CALLS.md', 'RELEASE_NOTES_AXIOM_ASSIGNMENTS.md', 'RELEASE_2_0_4.md', 'GENERATED_RECURSION.md', 'RELEASE_NOTES_GENERATED_DEBUGGER.md')) {
     Copy-PackageFile "$RepositoryRoot/docs/$document" "docs/$document"
 }
+Copy-PackageFile "$RepositoryRoot/docs/RELEASE_NOTES_BOOLEAN_CALLTERMS.md" 'docs/RELEASE_NOTES_BOOLEAN_CALLTERMS.md'
+Copy-PackageFile "$RepositoryRoot/docs/RUNTIME_LISTS.md" 'docs/RUNTIME_LISTS.md'
+Copy-PackageFile "$RepositoryRoot/docs/GENERATED_INSTRUMENTATION.md" 'docs/GENERATED_INSTRUMENTATION.md'
+Copy-PackageFile "$RepositoryRoot/docs/RELEASE_2_1_0.md" 'docs/RELEASE_2_1_0.md'
+Copy-PackageFile "$RepositoryRoot/docs/DOMAIN_LANGUAGE.md" 'docs/DOMAIN_LANGUAGE.md'
 Copy-PackageFile "$RepositoryRoot/docs/RELEASE_2_0_2.md" 'docs/RELEASE_2_0_2.md'
 Copy-PackageFile "$RepositoryRoot/docs/RUNTIME_BRIDGE_AUDIT.md" 'docs/RUNTIME_BRIDGE_AUDIT.md'
 Get-ChildItem "$PSScriptRoot/Examples" -Recurse -File | Where-Object Extension -in @('.cpp','.domain','.txt','.cmake','.ps1') | ForEach-Object {

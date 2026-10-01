@@ -5,7 +5,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $bridge = Get-Content "$root/HTNFramework/src/Translator/HTNRuntimeBridge.h" -Raw
 $entries = @([regex]::Matches($bridge, 'X\([^,]+,\s*((?:HTN|Htn)\w+),') | ForEach-Object { $_.Groups[1].Value })
 $generator = Get-Content "$root/HTNFramework/src/Translator/HTNCCodeGenerator.cpp" -Raw
-$headers = @('Core/HTNAtomC.h','Core/HtnSymbolGenerated.h','Translator/HTNCallTermBridge.h',
+$headers = @('Core/HTNAtomC.h','Core/HTNCallTermError.h','Core/HtnSymbolGenerated.h','Translator/HTNCallTermBridge.h',
     'Translator/HTNGeneratedBacktracking.h','Translator/HTNGeneratedDebug.h',
     'Translator/HTNGeneratedProfiling.h','WorldState/HTNGeneratedWorldState.h','Translator/HTNGeneratedPlanner.h')
 $rows = @()
@@ -28,14 +28,14 @@ if ($rows.Count -lt 50) { throw 'Incomplete public function inventory' }
 foreach ($name in $entries) {
     if ($name -notin $declared) { throw "Bridge entry has no inventoried public declaration: $name" }
 }
-$inlineHeader = Get-Content "$root/HTNFramework/src/Translator/HTNGeneratedPlanner.h" -Raw
+$inlineHeaders = ($headers | ForEach-Object { Get-Content "$root/HTNFramework/src/$_" -Raw }) -join "`n"
 foreach ($match in [regex]::Matches($generator, '\b((?:HTN|Htn)[A-Za-z0-9_]+)\s*\(')) {
     $name = $match.Groups[1].Value
     # HTN_ identifiers are generated macros (their external targets are inventoried
-    # above); HTNBuildCompilerIR runs inside the C++ translator, not emitted C.
-    if ($name.StartsWith('HTN_') -or $name -eq 'HTNBuildCompilerIR') { continue }
+    # above); these compiler helpers run inside the C++ translator, not emitted C.
+    if ($name.StartsWith('HTN_') -or $name -in @('HTNBuildCompilerIR', 'HTNAnalyzeCompilerReachability')) { continue }
     if ($name -in $entries) { continue }
-    if ($inlineHeader -match ('static inline[^{};]*\b' + $name + '\s*\(')) { continue }
+    if ($inlineHeaders -match ('static inline[^{};]*\b' + $name + '\s*\(')) { continue }
     throw "Unclassified generator function reference: $name"
 }
 $text = @('# RuntimeBridge 2.0.2 function audit', '',
@@ -45,6 +45,8 @@ $text = @('# RuntimeBridge 2.0.2 function audit', '',
     '- Both are now in the existing canonical X-macro table, which drives fields, host assignment, binding checks, forwarding and exports.',
     '- No additional directly emitted external function was found missing in this inventory.',
     '- `HTNGeneratedVariables_Get` and `HTNGeneratedVariables_IsBound` are static inline helpers; generated macros expand to the debug/profiling table entries.',
+    '- `HTNCallTerm_ReportError` is a static inline policy dispatcher in `Core/HTNCallTermError.h`; it requires no bridge export.',
+    '- `HTNBuildCompilerIR` and `HTNAnalyzeCompilerReachability` execute inside the C++ translator; they are not generated runtime dependencies.',
     '- Functions listed as host/helper APIs are not promises of bridge exports. The object/export check is authoritative for actual emitted dependencies, including macro expansion and compiler optimizations.', '',
     '| Function | Declaration | Usage classification | Bridge entry |', '| --- | --- | --- | --- |') + ($rows | Sort-Object -Unique)
 $text | Set-Content -LiteralPath $OutputPath -Encoding UTF8

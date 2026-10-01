@@ -2,14 +2,19 @@
 
 #pragma once
 
+#include <assert.h>
 #include <stdint.h>
+
+#define HTN_CALLTERM_ERROR_UNSET UINT32_C(0)
+#define HTN_CALLTERM_ERROR_FAIL_SILENTLY UINT32_C(1)
+#define HTN_CALLTERM_ERROR_REPORT UINT32_C(2)
 
 #ifdef __cplusplus
 enum class HTNCallTermErrorPolicy : uint32_t
 {
-    Unset,
-    FailSilently,
-    Report
+    Unset = HTN_CALLTERM_ERROR_UNSET,
+    FailSilently = HTN_CALLTERM_ERROR_FAIL_SILENTLY,
+    Report = HTN_CALLTERM_ERROR_REPORT
 };
 enum class HTNCallTermErrorReason : uint32_t
 {
@@ -20,13 +25,11 @@ enum class HTNCallTermErrorReason : uint32_t
     ArgumentTypeMismatch,
     ArgumentConversionFailed,
     ReturnConversionFailed,
+    NonBooleanConditionResult,
     None = UINT32_MAX
 };
 #else
 typedef uint32_t HTNCallTermErrorPolicy;
-#define HTN_CALLTERM_ERROR_UNSET UINT32_C(0)
-#define HTN_CALLTERM_ERROR_FAIL_SILENTLY UINT32_C(1)
-#define HTN_CALLTERM_ERROR_REPORT UINT32_C(2)
 typedef uint32_t HTNCallTermErrorReason;
 #define HTN_CALLTERM_ERROR_NOT_REGISTERED UINT32_C(0)
 #define HTN_CALLTERM_ERROR_MISSING_BINDING UINT32_C(1)
@@ -35,6 +38,7 @@ typedef uint32_t HTNCallTermErrorReason;
 #define HTN_CALLTERM_ERROR_ARGUMENT_TYPE_MISMATCH UINT32_C(4)
 #define HTN_CALLTERM_ERROR_ARGUMENT_CONVERSION_FAILED UINT32_C(5)
 #define HTN_CALLTERM_ERROR_RETURN_CONVERSION_FAILED UINT32_C(6)
+#define HTN_CALLTERM_ERROR_NON_BOOLEAN_CONDITION_RESULT UINT32_C(7)
 #define HTN_CALLTERM_ERROR_NONE UINT32_MAX
 #endif
 
@@ -66,3 +70,21 @@ typedef struct HTNCallTermErrorInfo
 
 /* The client owns the context. If this returns, invocation fails normally. */
 typedef void (*HTNCallTermErrorCallback)(void* client_context, const HTNCallTermErrorInfo* info);
+
+/* Shared by registry invocation and generated condition checks. No bridge export
+ * or layout change: the caller supplies borrowed metadata and handles failure. */
+static inline void HTNCallTerm_ReportError(HTNCallTermErrorPolicy policy,
+                                         HTNCallTermErrorCallback callback,
+                                         void* client_context,
+                                         const HTNCallTermErrorInfo* info)
+{
+    const uint32_t policy_value = (uint32_t)policy;
+    assert(policy_value != HTN_CALLTERM_ERROR_UNSET && "Configure the callterm error policy explicitly");
+    assert((policy_value == HTN_CALLTERM_ERROR_UNSET || policy_value == HTN_CALLTERM_ERROR_FAIL_SILENTLY ||
+            policy_value == HTN_CALLTERM_ERROR_REPORT) && "Invalid callterm error policy");
+    if (policy_value == HTN_CALLTERM_ERROR_REPORT)
+    {
+        assert(callback && "Report policy requires a callterm error callback");
+        if (callback) callback(client_context, info);
+    }
+}

@@ -43,6 +43,10 @@ struct MissingReport
     int Count = 0;
     HTNCallTermErrorReason Reason{};
     std::string Name;
+    uint32_t ActualType = UINT32_MAX;
+    uint32_t ExpectedType = UINT32_MAX;
+    std::string File;
+    uint32_t Line = 0, Column = 0;
 };
 
 static void ReportMissing(void* inClient, const HTNCallTermErrorInfo* inInfo)
@@ -51,6 +55,11 @@ static void ReportMissing(void* inClient, const HTNCallTermErrorInfo* inInfo)
     ++Report.Count;
     Report.Reason = inInfo->Reason;
     Report.Name = inInfo->Name;
+    Report.ActualType = inInfo->ActualAtomType;
+    Report.ExpectedType = inInfo->ExpectedAtomType;
+    Report.File = inInfo->Source.file ? inInfo->Source.file : "";
+    Report.Line = inInfo->Source.line;
+    Report.Column = inInfo->Source.column;
 }
 
 static bool ValidateMissingCallTerms()
@@ -120,6 +129,9 @@ int main()
 
     HTNCallTermRegistry Registry;
     HTNCallTermBindingContext BindingContext(Registry);
+    HTNAtomOwner ConditionValue(42);
+    int ConditionCalls = 0;
+    Registry.Bind("condition_value", [&](const HTNCallTermArguments&) { ++ConditionCalls; return ConditionValue; });
     HTNWorldState WorldState;
     void* PreparedStorage = ::operator new(Definition->prepared_storage_size, std::nothrow);
     void* ExecutionStorage = ::operator new(Definition->execution_storage_size, std::nothrow);
@@ -170,6 +182,38 @@ int main()
 
     if (!Valid)
         return Finish(4);
+
+    MissingReport Report;
+    Context.client_context = &Report;
+    const auto CheckCondition = [&](HTNCallTermErrorPolicy Policy, HTNCallTermErrorCallback Callback, bool ExpectSuccess)
+    {
+        Context.callterm_error_policy = Policy;
+        Context.callterm_error_callback = Callback;
+        const int Before = Report.Count;
+        const int BeforeCalls = ConditionCalls;
+        HTNAtomOwner ConditionCall(HTNAtom::sCreateCall(HtnSymbol::sGetSymbol("boolean_condition")));
+        HTNAtomOwner Result;
+        const auto Status = Definition->decompose_call(&Context, ConditionCall.Get(), 1, Result.Get());
+        if (Status != (ExpectSuccess ? HTN_DECOMPOSITION_SUCCEEDED : HTN_DECOMPOSITION_NO_PLAN) || ConditionCalls != BeforeCalls + 1)
+            return false;
+        if (!ExpectSuccess && (Result.Get()->type != HTN_ATOM_TYPE_LIST || Result.GetListSize() != 0)) return false;
+        const bool ShouldReport = ConditionValue.Get()->type != HTN_ATOM_TYPE_BOOL && Policy == HTNCallTermErrorPolicy::Report && Callback;
+        if (Report.Count != Before + (ShouldReport ? 1 : 0)) return false;
+        return !ShouldReport || (Report.Reason == HTNCallTermErrorReason::NonBooleanConditionResult &&
+            Report.Name == "condition_value" && Report.ActualType == HTN_ATOM_TYPE_INT && Report.ExpectedType == HTN_ATOM_TYPE_BOOL &&
+            Report.File.find("example.domain") != std::string::npos && Report.Line != 0 && Report.Column != 0);
+    };
+    if (!CheckCondition(HTNCallTermErrorPolicy::Report, ReportMissing, false) ||
+        !CheckCondition(HTNCallTermErrorPolicy::FailSilently, ReportMissing, false)) return Finish(11);
+#ifdef NDEBUG
+    if (!CheckCondition(HTNCallTermErrorPolicy::Unset, nullptr, false) ||
+        !CheckCondition(HTNCallTermErrorPolicy::Report, nullptr, false)) return Finish(12);
+#endif
+    ConditionValue = HTNAtomOwner(false);
+    if (!CheckCondition(HTNCallTermErrorPolicy::Report, ReportMissing, false)) return Finish(13);
+    ConditionValue = HTNAtomOwner(true);
+    if (!CheckCondition(HTNCallTermErrorPolicy::Report, ReportMissing, true)) return Finish(14);
+    std::puts("Standalone callterm condition validation: PASS");
 
 #ifdef HTN_DEBUG_DECOMPOSITION
     std::puts("Core-only external package consumer: PASS (debug decomposition captured)");

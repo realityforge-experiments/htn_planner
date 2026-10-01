@@ -28,16 +28,6 @@ typedef enum HTNGeneratedConditionKind
     HTN_CONDITION_ASSIGNMENT = 10
 } HTNGeneratedConditionKind;
 
-typedef enum HTNGeneratedBuiltinComparisonOperator
-{
-    HTN_BUILTIN_COMPARE_EQUAL = 0,
-    HTN_BUILTIN_COMPARE_NOT_EQUAL = 1,
-    HTN_BUILTIN_COMPARE_LESS = 2,
-    HTN_BUILTIN_COMPARE_LESS_EQUAL = 3,
-    HTN_BUILTIN_COMPARE_GREATER = 4,
-    HTN_BUILTIN_COMPARE_GREATER_EQUAL = 5
-} HTNGeneratedBuiltinComparisonOperator;
-
 
 typedef enum HTNGeneratedBuiltinListSplitOperation
 {

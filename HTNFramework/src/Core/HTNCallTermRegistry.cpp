@@ -4,7 +4,6 @@
 #include "Core/HTNCallTermBindingContext.h"
 #include "Translator/HTNCallTermBridge.h"
 #include "Translator/HTNGeneratedPlanner.h"
-#include <cassert>
 
 bool HTNCallTermRegistry::IsBound(const std::string& inID) const
 {
@@ -65,14 +64,7 @@ HTNAtomOwner HTNCallTermRegistry::InvokeEntry(const Entry* inEntry, const char* 
         Result = inEntry->Function(Daemon, Arguments);
     }
     if (Info.Reason == HTNCallTermErrorReason::None) return Result;
-    assert(inPolicy != HTNCallTermErrorPolicy::Unset && "Configure the callterm error policy explicitly");
-    assert((inPolicy == HTNCallTermErrorPolicy::Unset || inPolicy == HTNCallTermErrorPolicy::FailSilently ||
-            inPolicy == HTNCallTermErrorPolicy::Report) && "Invalid callterm error policy");
-    if (inPolicy == HTNCallTermErrorPolicy::Report)
-    {
-        assert(inCallback && "Report policy requires a callterm error callback");
-        if (inCallback) inCallback(inClientContext, &Info);
-    }
+    HTNCallTerm_ReportError(inPolicy, inCallback, inClientContext, &Info);
     return {};
 }
 

@@ -139,7 +139,8 @@ HTNAtomOwner Literal(const Form& inForm)
     if (!Is(inForm, Type::TRUE) && !Is(inForm, Type::FALSE) &&
         !Is(inForm, Type::NUMBER) && !Is(inForm, Type::STRING))
     {
-        Invalid(HTNParserErrorCode::ExpectedLiteral, "Expected compiler literal");
+        ErrorRange = inForm.Range;
+        Invalid(HTNParserErrorCode::ExpectedLiteral, "Expected a value: symbol, string, number, boolean, variable or list expression");
         return HTNAtomOwner("");
     }
     return inForm.Atom;
@@ -201,6 +202,24 @@ AST::ValuePtr Argument(const std::vector<Form>& inItems, size_t& ioIndex, uint32
             Result->CallArguments.push_back(Argument(Head.Items, I, inFileIndex));
             if (Error.HasError()) return {};
         }
+    }
+    else if (Head.IsList && !Head.Items.empty())
+    {
+        bool Static = true;
+        for (size_t I = 0; I < Head.Items.size();)
+        {
+            auto Element = Argument(Head.Items, I, inFileIndex);
+            if (Error.HasError()) return {};
+            Static = Static && Element->Kind == AST::ValueKind::Literal;
+            Result->ListElements.push_back(std::move(Element));
+        }
+        if (Static)
+        {
+            for (const auto& Element : Result->ListElements)
+                Result->Atom.PushBackElementToList(Element->GetValue());
+            Result->ListElements.clear();
+        }
+        else Result->Kind = AST::ValueKind::RuntimeList;
     }
     else
     {

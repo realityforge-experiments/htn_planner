@@ -525,6 +525,9 @@ group "Tests"
             "%{prj.name}/generated/backtracking_policy_overflow/backtracking_policy.generated.c",
             "%{prj.name}/generated/backtracking_policy_fixed_small/backtracking_policy.generated.c",
             "%{prj.name}/generated/backtracking_policy_fixed_enough/backtracking_policy.generated.c",
+            "%{prj.name}/generated/instrumentation_none/runtime_lists.generated.c",
+            "%{prj.name}/generated/instrumentation_none/recursion_dispatch.generated.c",
+            "%{prj.name}/generated/instrumentation_none/shared_implementations.generated.c",
             -- Optick
             "ThirdParty/optick/src/**.cpp",
             "ThirdParty/optick/src/**.h" }
@@ -537,6 +540,11 @@ group "Tests"
         links { "dl" }
     filter {}
     prebuildcommands(MakeHTNDomainGenerationCommands("HTNTest/generated"))
+    prebuildcommands {
+        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/runtime_lists.domain" CreateRuntimeListsNoneHTN "%{wks.location}/HTNTest/generated/instrumentation_none" --instrumentation=none' .. (os.host() == "windows" and " || exit /b 1" or " || exit 1"),
+        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/recursion_dispatch.domain" CreateRecursionDispatchNoneHTN "%{wks.location}/HTNTest/generated/instrumentation_none" --instrumentation=none' .. (os.host() == "windows" and " || exit /b 1" or " || exit 1"),
+        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/shared_implementations.domain" CreateSharedImplementationsNoneHTN "%{wks.location}/HTNTest/generated/instrumentation_none" --instrumentation=none' .. (os.host() == "windows" and " || exit /b 1" or " || exit 1")
+    }
     prebuildcommands {
         '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/backtracking_policy.domain" CreateBacktrackingPolicyOverflowHTN "%{wks.location}/HTNTest/generated/backtracking_policy_overflow" --backtracking-policy=fixed-with-overflow --backtracking-capacity=2' .. (_OPTIONS["runtime-backtracking-support"] == "enabled" and " --runtime-backtracking-support=enabled" or "") .. (os.host() == "windows" and " || exit /b 1" or " || exit 1"),
         '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/backtracking_policy.domain" CreateBacktrackingPolicyFixedSmallHTN "%{wks.location}/HTNTest/generated/backtracking_policy_fixed_small" --backtracking-policy=fixed-capacity --backtracking-capacity=2' .. (_OPTIONS["runtime-backtracking-support"] == "enabled" and " --runtime-backtracking-support=enabled" or "") .. (os.host() == "windows" and " || exit /b 1" or " || exit 1"),

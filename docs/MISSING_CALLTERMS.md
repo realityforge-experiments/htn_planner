@@ -70,6 +70,19 @@ does not append a primitive task containing that failed result.
 - `ArgumentConversionFailed`: the converter rejected a representation that
   passed the signature check (for example, a stale entity ID).
 - `ReturnConversionFailed`: the function ran but its result could not be converted.
+- `NonBooleanConditionResult`: a generated standalone callterm condition returned
+  a valid non-boolean atom. `ExpectedAtomType` is bool, `ExpectedTypeName` is
+  `"bool"`, and `ActualAtomType` is the returned representation. The callback runs
+  once under `Report`, then the condition fails if the callback returns. A bool
+  `false` is still an ordinary failure. Use an explicit assignment or comparison
+  for non-boolean results; implicit truthiness is not supported.
+
+For the standalone-condition check, source data points to `(call ...)`, including
+in deferred decomposition and without debugger instrumentation. Custom types are
+reported using their atom representation: a Vector3 stored as a list is `list`.
+See [standalone callterm conditions](RELEASE_NOTES_BOOLEAN_CALLTERMS.md) for examples
+and compatibility. This new reason preserves existing payload layouts and ABI
+versions; regenerate domains to enable the check.
 
 `ArgumentIndex` is zero-based (`UINT32_MAX` when not applicable).
 `ExpectedArgumentCount` and `ActualArgumentCount` describe the invocation.
@@ -129,9 +142,10 @@ argument; resolving a slot still takes the binding context. The C++ registry
 
 The initial policy implementation used planner ABI versions plain `0x48540004`,
 debug `0x48550005`, profiling `0x48560004`, debug/profiling `0x48570005`.
-With the generated recursion update, 2.0.4 uses planner ABI plain
-`0x48540007`, debug `0x48550008`, profiling `0x48560007`, debug+profiling
-`0x48570008`, and RuntimeBridge revision 8.
+The final 2.0.4 release, including the debugger metadata correction, uses planner
+ABI plain `0x48540007`, debug `0x48550009`, profiling `0x48560007`, debug+profiling
+`0x48570009`, and RuntimeBridge revision 8. Version 2.1.0 retains these revisions;
+its non-boolean condition diagnostic adds an error reason without changing layouts.
 Regenerate domains and rebuild hosts, runtime bridge and modules together.
 Old definitions/tables are rejected; the atom and cached-callterm layouts remain
 unchanged. See [type conversions](TYPE_CONVERSION.md) for converter migration.

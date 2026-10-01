@@ -10,6 +10,23 @@
 
 namespace HTNCompilerAST { struct Domain; }
 
+struct HTNGeneratedCodeSize
+{
+    uint64_t Bytes = 0u;
+    uint64_t LineBreaks = 0u;
+};
+
+// Exact emitted-source accounting, before C preprocessing. Inline fragments can
+// share a line: count newline characters, not overlapping "lines containing" tags.
+struct HTNGeneratedCodeStatistics
+{
+    HTNGeneratedCodeSize Logic;
+    HTNGeneratedCodeSize Debugger;
+    HTNGeneratedCodeSize Profiling;
+    HTNGeneratedCodeSize OmittedDebugger;
+    HTNGeneratedCodeSize OmittedProfiling;
+};
+
 struct HTNCCodeGeneratorOptions
 {
     std::string OutputSourcePath;
@@ -33,6 +50,8 @@ struct HTNCCodeGeneratorOptions
 
     // Fixed generated call-frame array size; no runtime growth or allocation.
     uint32_t CallFrameCapacity = 8192u;
+
+    HTNGeneratedInstrumentation Instrumentation = HTNGeneratedInstrumentation::Full;
 };
 
 class HTNCCodeGenerator final
@@ -40,5 +59,6 @@ class HTNCCodeGenerator final
 public:
     bool Generate(const HTNCompilerAST::Domain& inDomain,
                   const HTNCCodeGeneratorOptions& inOptions,
-                  std::string& outError) const;
+                  std::string& outError,
+                  HTNGeneratedCodeStatistics* outStatistics = nullptr) const;
 };

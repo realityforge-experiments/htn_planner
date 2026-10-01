@@ -61,6 +61,18 @@ typedef enum HTNGeneratedPlannerFeatures
     HTN_GENERATED_FEATURE_RUNTIME_BACKTRACKING = 1u << 0u
 } HTNGeneratedPlannerFeatures;
 
+/* Operators used by generated planner logic, also displayed by the debugger.
+   Keep their existing numeric values independent of optional instrumentation. */
+typedef enum HTNGeneratedBuiltinComparisonOperator
+{
+    HTN_BUILTIN_COMPARE_EQUAL = 0,
+    HTN_BUILTIN_COMPARE_NOT_EQUAL = 1,
+    HTN_BUILTIN_COMPARE_LESS = 2,
+    HTN_BUILTIN_COMPARE_LESS_EQUAL = 3,
+    HTN_BUILTIN_COMPARE_GREATER = 4,
+    HTN_BUILTIN_COMPARE_GREATER_EQUAL = 5
+} HTNGeneratedBuiltinComparisonOperator;
+
 
 /* C-compatible variable view shared by generated execution and the event debugger.
    Generated C owns slot mutation and checkpoint bookkeeping directly. */
