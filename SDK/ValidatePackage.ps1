@@ -12,6 +12,16 @@ function Get-Sha256([string]$Path) {
     }
 }
 if (Test-Path -LiteralPath $BuildRoot) { throw 'Validation requires a new build directory; refusing cached builds' }
+$natvisPath = [IO.Path]::GetFullPath("$PSScriptRoot/debug/HTN.natvis")
+if (!(Test-Path -LiteralPath $natvisPath -PathType Leaf)) { throw 'Missing SDK debugger visualizer: debug/HTN.natvis' }
+[xml]$natvis = Get-Content -LiteralPath $natvisPath -Raw
+if ($natvis.DocumentElement.LocalName -ne 'AutoVisualizer' -or
+    $natvis.DocumentElement.NamespaceURI -ne 'http://schemas.microsoft.com/vstudio/debugger/natvis/2010') {
+    throw 'Invalid HTN.natvis visualizer document'
+}
+foreach ($type in @('HtnSymbol', 'HTNAtom', 'HTNAtomOwner', 'HTNAtomList')) {
+    if ($type -notin @($natvis.AutoVisualizer.Type.Name)) { throw "Missing Natvis type: $type" }
+}
 $manifest = Get-Content "$PSScriptRoot/manifest.json" -Raw | ConvertFrom-Json
 if (!$manifest.build_id -or !$manifest.sdk_version -or $manifest.variants.Count -ne 8) {
     throw 'Incomplete release manifest'
@@ -49,6 +59,13 @@ foreach ($variant in $manifest.variants) {
     $build = Join-Path $BuildRoot $id
     & cmake -S "$PSScriptRoot/examples" -B $build -G 'Visual Studio 17 2022' -A x64 -T v143 "-DHTN_DIR=$PSScriptRoot/cmake" '-DCMAKE_CONFIGURATION_TYPES=Validation' "-DHTN_VARIANT_VALIDATION=$id"
     if ($LASTEXITCODE) { throw "Configure failed: $id" }
+    foreach ($target in @('CoreConsumer', 'IntegrationConsumer', 'DomainModule', 'BridgeConsumer')) {
+        [xml]$project = Get-Content -LiteralPath "$build/$target.vcxproj" -Raw
+        $visualizers = @($project.Project.ItemGroup.Natvis | Where-Object { $_.Include } | ForEach-Object {
+            [IO.Path]::GetFullPath([IO.Path]::Combine($build, $_.Include))
+        })
+        if ($natvisPath -notin $visualizers) { throw "Natvis not attached to consumer: $id/$target" }
+    }
     & cmake --build $build --config Validation --parallel 3
     if ($LASTEXITCODE) { throw "Build failed: $id" }
     & ctest --test-dir $build -C Validation --output-on-failure
@@ -68,3 +85,4 @@ $ErrorActionPreference = 'Stop'
 if ($unknownExitCode -eq 0 -or -not (Select-String -LiteralPath $unknownLog -Pattern 'Unknown HTN variant' -Quiet)) { throw 'Unknown variant was not rejected' }
 Write-Host "PASS: all eight SDK variants, 24 consumer executions and 8 object/export checks. Build outputs: $BuildRoot"
 Write-Host 'PASS: incompatible CRT and unknown variant rejected.'
+Write-Host 'PASS: packaged Natvis types, checksums and Visual Studio integration in all eight variants.'

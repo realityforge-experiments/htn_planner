@@ -23,6 +23,19 @@ Debug CRT variants use no optimization; Release CRT variants are optimized.
 Every variant includes PDBs. The framework itself is a static library in all
 variants; RuntimeBridge is a separate optional DLL.
 
+**Visual Studio type visualizers**
+
+The package includes `debug/HTN.natvis` for `HtnSymbol`, `HTNAtom`,
+`HTNAtomOwner` and `HTNAtomList`, in every variant. The Windows CMake targets
+attach it automatically to consumers linking `HTN::HTNFramework`,
+`HTN::HTNIntegration` or `HTN::HTNRuntimeBridge`.
+
+For an engine with its own project generator, include this file in the generated
+Visual Studio project. For a manually maintained project, use **Add > Existing
+Item** and select `debug/HTN.natvis` from the extracted SDK. Keep the file from
+the same SDK version as your headers and libraries. No global Visual Studio
+installation or HTN instrumentation flag is required.
+
 Domain source is consumed by the standalone translator and the resulting C source
 uses the generated runtime API. Runtime packages also include the compiler frontend
 used by the translator and authoring tools.

@@ -24,6 +24,22 @@ Every variant includes symbols. Instrumented variants define
 `HTN_DEBUG_DECOMPOSITION` and include generated event metadata. Instrumentation
 does not select a Debug CRT or disable optimization.
 
+### Visual Studio Natvis
+
+Every Windows variant includes `debug/HTN.natvis` with views for `HtnSymbol`,
+`HTNAtom`, `HTNAtomOwner` and `HTNAtomList`. Linking the packaged CMake targets
+`HTN::HTNFramework`, `HTN::HTNIntegration` or `HTN::HTNRuntimeBridge` adds the
+visualizer to the consuming Visual Studio project automatically.
+
+With a custom engine build system, add the SDK's `debug/HTN.natvis` to the
+generated project; in a manually maintained Visual Studio project, use
+**Add > Existing Item**. Use the visualizer from the same SDK version as the
+headers and libraries. It is available in Plain and Instrumented builds.
+
+`ValidatePackage.ps1` requires the visualizer and its four type definitions,
+checks its package checksum, and verifies that the generated host and domain
+projects include it for all eight variants.
+
 ## CMake selection
 
 Select a variant for every configuration before calling `find_package`:

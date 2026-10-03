@@ -5,6 +5,10 @@ exceptions are called out explicitly in each release.
 
 ## Unreleased
 
+- Include `debug/HTN.natvis` in the Windows SDK, propagate it to CMake consumers,
+  and validate its type definitions, checksum and Visual Studio project integration.
+  No C API, ABI or atom-layout change.
+
 - Add native Ubuntu 24.04 x86_64 builds with GCC 14 and Clang 18/libstdc++ for
   the generated runtime, translator, integration, visual demos/debugger, language
   server, benchmarks and tests. HTNEditor remains Windows-only and experimental.

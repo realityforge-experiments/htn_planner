@@ -6,6 +6,10 @@ if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "This HTN SDK requires Windows x64 and an MSVC-compatible compiler")
 endif()
 get_filename_component(_htn_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+set(_htn_natvis "${_htn_root}/debug/HTN.natvis")
+if(NOT EXISTS "${_htn_natvis}")
+    message(FATAL_ERROR "HTN SDK is missing debug/HTN.natvis; reinstall the complete package")
+endif()
 file(READ "${_htn_root}/manifest.json" _htn_manifest)
 string(JSON HTN_VERSION GET "${_htn_manifest}" sdk_version)
 set(_htn_configs ${CMAKE_CONFIGURATION_TYPES})
@@ -24,6 +28,10 @@ endforeach()
 add_library(HTN::HTNRuntimeBridge SHARED IMPORTED GLOBAL)
 set_target_properties(HTN::HTNRuntimeBridge PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${_htn_root}/include/HTNFramework")
+# Propagate the visualizer to host and domain projects, including Integration's
+# transitive Framework dependency. This applies to every SDK variant.
+set_property(TARGET HTN::HTNFramework HTN::HTNRuntimeBridge APPEND PROPERTY
+    INTERFACE_SOURCES "${_htn_natvis}")
 add_executable(HTN::HTNTranslator IMPORTED GLOBAL)
 set_property(TARGET HTN::HTNTranslator PROPERTY IMPORTED_LOCATION
     "${_htn_root}/bin/windows-x86_64/tools/HTNTranslator.exe")

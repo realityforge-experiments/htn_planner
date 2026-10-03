@@ -69,6 +69,7 @@ foreach ($variant in $HTNVariants) {
 }
 $toolRoot = "$RepositoryRoot/bin/sdk/StaticReleasePlain-$Platform/HTNTranslator"
 Require-File "$toolRoot/HTNTranslator.exe"
+Require-File "$RepositoryRoot/HTNFramework/HTN.natvis"
 foreach ($path in @($OutputDirectory, $ArchivePath)) {
     $resolved = [IO.Path]::GetFullPath($path)
     if (-not $resolved.StartsWith($DistRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Package output escapes dist' }
@@ -113,6 +114,7 @@ Copy-PackageFile "$toolRoot/HTNTranslator.exe" "bin/$Platform/tools/HTNTranslato
 Copy-PackageFile "$toolRoot/HTNTranslator.pdb" "bin/$Platform/tools/HTNTranslator.pdb"
 Copy-PackageFile "$RepositoryRoot/LICENSE" 'LICENSE'
 Copy-PackageFile "$RepositoryRoot/NOTICE.md" 'NOTICE.md'
+Copy-PackageFile "$RepositoryRoot/HTNFramework/HTN.natvis" 'debug/HTN.natvis'
 Copy-PackageFile "$RepositoryRoot/ThirdParty/optick/LICENSE" 'THIRD_PARTY_NOTICES/Optick-LICENSE.txt'
 Copy-PackageFile "$PSScriptRoot/PackageREADME.md" 'README.md'
 Copy-PackageFile "$PSScriptRoot/HTNConfig.cmake" 'cmake/HTNConfig.cmake'
