@@ -573,6 +573,7 @@ group "Tests"
                 "%{prj.name}/generated/backtracking_policy_fixed_small/backtracking_policy.generated.c",
                 "%{prj.name}/generated/backtracking_policy_fixed_enough/backtracking_policy.generated.c",
                 "%{prj.name}/generated/instrumentation_none/runtime_lists.generated.c",
+                "%{prj.name}/generated/instrumentation_none/negative_literals.generated.c",
                 "%{prj.name}/generated/instrumentation_none/recursion_dispatch.generated.c",
                 "%{prj.name}/generated/instrumentation_none/shared_implementations.generated.c" } or {},
             -- Optick
@@ -589,7 +590,7 @@ group "Tests"
         links { "dl" }
     filter {}
     GenerateHTNDomains("HTNTest/generated")
-    for _, domain in ipairs { "runtime_lists", "recursion_dispatch", "shared_implementations" } do
+    for _, domain in ipairs { "runtime_lists", "recursion_dispatch", "shared_implementations", "negative_literals" } do
         GenerateHTNDomain("Domains/Test/" .. domain .. ".domain", "HTNTest/generated/instrumentation_none",
             MakeHTNEntryPoint(domain):gsub("HTN$", "NoneHTN"), "--instrumentation=none")
     end

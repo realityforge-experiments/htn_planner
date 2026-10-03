@@ -1,0 +1,69 @@
+// Copyright (c) 2026 Jose Antonio Escribano joseantonioescribanoayllon@gmail.com
+
+(:domain negative_literals top_level_domain
+    (:method (run) top_level_method
+        (branch
+            (and
+                (== -1 -1)
+                (== -1.5 -1.5)
+                (< -2.0 0.0)
+                (== (+ -2 3) 1)
+                (== (- -2 3) -5)
+            )
+            (
+                (!values -1 -1.5 marker)
+                (!remember -1.0 is_moving)
+            )
+        )
+    )
+
+    (:constants (offset -7) (position (-1.0 -0.5 -123.456)))
+
+    (:method (contexts) top_level_method
+        (branch
+            (and
+                (signed_fact -1 -0.5)
+                (= ?literal -123.456)
+                (= ?returned (call negative_identity -1.5))
+                (call negative_predicate -1 -0.5)
+                (#negative_echo -2 ?output)
+                (== ?output -2)
+            )
+            (
+                (!values ?literal ?returned ?output @offset @position)
+                (!list (target ?literal -0.5 (call negative_identity -1)))
+                (emit -1.0)
+            )
+        )
+    )
+
+    (:axiom (negative_echo ?inp_value ?out_value)
+        (and (= ?out_value ?inp_value))
+    )
+
+    (:method (emit ?inp_value)
+        (branch () ((!emitted ?inp_value)))
+    )
+
+    (:method (operators ?inp_value) top_level_method
+        (branch ()
+            ((!values (- 5 2) (- 1.0) (-- 1.5) (- ?inp_value 1)
+                      (- -2 3) (+ -2 3) (-- -1.5)))
+        )
+    )
+
+    (:method (boundaries) top_level_method
+        (branch () ((!values -2147483648 -0.0 -0 -123.456 (-2147483648) (+ -2147483648 1))))
+    )
+
+    (:method (backtracking) top_level_method
+        (branch
+            (and (candidate ?value) (= ?sum (+ ?value -1)) (selected ?sum))
+            ((!values ?value ?sum))
+        )
+    )
+
+    (:method (deferred) top_level_method
+        (branch () ((&emit -1.0)))
+    )
+)

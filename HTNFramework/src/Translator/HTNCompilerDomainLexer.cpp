@@ -93,11 +93,7 @@ bool HTNCompilerDomainLexer::Lex(HTNCompilerDomainLexerContext& ioDomainLexerCon
             break;
         }
         case '-': {
-            const bool IsDecrement = ioDomainLexerContext.GetCharacter(1) == '-';
-            ioDomainLexerContext.AddToken(HTNAtomOwner(), IsDecrement ? HTNTokenType::DECREMENT : HTNTokenType::MINUS
-                HTN_LOG_ONLY(, IsDecrement ? "--" : "-"));
-            ioDomainLexerContext.AdvancePosition();
-            if (IsDecrement) ioDomainLexerContext.AdvancePosition();
+            Result = LexMinus(ioDomainLexerContext) && Result;
             break;
         }
         case '*': {

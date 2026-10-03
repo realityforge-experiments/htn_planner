@@ -49,6 +49,9 @@ enum class HTNParserErrorCode : uint8_t
 
 inline constexpr const char* HTNInvalidAssignmentDiagnostic = "Assignment requires a variable destination and exactly one value expression";
 inline constexpr const char* HTNImplicitAssignmentDiagnostic = "Implicit call-result binding is no longer supported; use an explicit assignment condition";
+inline constexpr const char* HTNNegativeLiteralDiagnostic =
+    "Expected a negative literal with an adjacent digit (for example -1 or -0.5); "
+    "use (- value) for negation, (- left right) for subtraction or (-- value) for decrement";
 
 struct HTNParserError
 {

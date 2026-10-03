@@ -24,6 +24,7 @@ struct Form
 {
     Type TokenType = Type::END_OF_FILE;
     HTNAtomOwner Atom;
+    std::string NumericText;
     HTNSourceRange Range;
     bool IsList = false;
     std::vector<Form> Items;
@@ -34,7 +35,7 @@ void Invalid(HTNParserErrorCode inCode, const std::string& inMessage)
     if (!Error.HasError()) Error = {inCode, inMessage, ErrorRange};
 }
 
-Form ReadForm(const std::vector<HTNToken>& inTokens, size_t& ioPosition)
+Form ReadForm(const std::vector<HTNToken>& inTokens, size_t& ioPosition, const std::string& inSource)
 {
     if (ioPosition >= inTokens.size())
     {
@@ -47,6 +48,8 @@ Form ReadForm(const std::vector<HTNToken>& inTokens, size_t& ioPosition)
     Result.TokenType = Token.GetType();
     Result.Atom = Token.GetValue();
     Result.Range = Token.GetSourceRange();
+    if (Result.TokenType == Type::NUMBER)
+        Result.NumericText = inSource.substr(Result.Range.Begin.Offset, Result.Range.End.Offset - Result.Range.Begin.Offset);
     if (Result.TokenType == Type::RIGHT_PARENTHESIS || Result.TokenType == Type::END_OF_FILE)
     {
         Invalid(HTNParserErrorCode::UnexpectedToken, "Unexpected compiler syntax token");
@@ -62,7 +65,7 @@ Form ReadForm(const std::vector<HTNToken>& inTokens, size_t& ioPosition)
             Invalid(HTNParserErrorCode::UnclosedList, "Unclosed compiler syntax list");
             return {};
         }
-        Result.Items.push_back(ReadForm(inTokens, ioPosition));
+        Result.Items.push_back(ReadForm(inTokens, ioPosition, inSource));
         if (Error.HasError()) return {};
     }
     if (ioPosition >= inTokens.size())
@@ -140,7 +143,9 @@ HTNAtomOwner Literal(const Form& inForm)
         !Is(inForm, Type::NUMBER) && !Is(inForm, Type::STRING))
     {
         ErrorRange = inForm.Range;
-        Invalid(HTNParserErrorCode::ExpectedLiteral, "Expected a value: symbol, string, number, boolean, variable or list expression");
+        Invalid(HTNParserErrorCode::ExpectedLiteral,
+            Is(inForm, Type::MINUS) || Is(inForm, Type::DECREMENT) ? HTNNegativeLiteralDiagnostic :
+            "Expected a value: symbol, string, number, boolean, variable or list expression");
         return HTNAtomOwner("");
     }
     return inForm.Atom;
@@ -215,8 +220,14 @@ AST::ValuePtr Argument(const std::vector<Form>& inItems, size_t& ioIndex, uint32
         }
         if (Static)
         {
+            Result->LiteralText = "(";
             for (const auto& Element : Result->ListElements)
+            {
                 Result->Atom.PushBackElementToList(Element->GetValue());
+                if (Result->LiteralText.size() > 1u) Result->LiteralText += " ";
+                Result->LiteralText += Element->LiteralText.empty() ? HTNAtomToString(Element->GetValue(), true) : Element->LiteralText;
+            }
+            Result->LiteralText += ")";
             Result->ListElements.clear();
         }
         else Result->Kind = AST::ValueKind::RuntimeList;
@@ -225,6 +236,7 @@ AST::ValuePtr Argument(const std::vector<Form>& inItems, size_t& ioIndex, uint32
     {
         Result->Kind = AST::ValueKind::Literal;
         Result->Atom = Literal(Head);
+        Result->LiteralText = Head.NumericText;
     }
     if (Error.HasError()) return {};
     return Result;
@@ -631,7 +643,7 @@ bool HTNParseCompilerDomainSyntax(const std::string& inSource,
         return Fail();
     }
     size_t Position = 0;
-    const Form Root = ReadForm(Tokens, Position);
+    const Form Root = ReadForm(Tokens, Position, inSource);
     if (Error.HasError()) return Fail();
     if (Position >= Tokens.size() || Tokens[Position].GetType() != Type::END_OF_FILE)
     {

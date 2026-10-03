@@ -53,7 +53,7 @@ std::string FormatDomainValueExpression(const AST::Value& inNode)
     case AST::ValueKind::Identifier:
         return HTNAtomToString(Value, false);
     case AST::ValueKind::Literal:
-        return HTNAtomToString(Value, true);
+        return inNode.LiteralText.empty() ? HTNAtomToString(Value, true) : inNode.LiteralText;
     case AST::ValueKind::Variable:
         return "?" + HTNAtomToString(Value, false);
     case AST::ValueKind::Constant:

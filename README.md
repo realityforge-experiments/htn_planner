@@ -27,11 +27,13 @@ The repository includes:
 - An editor, language server, hot reload example, tests and benchmarks.
 - Packageable Windows and Linux x64 SDKs with CMake integration.
 
-Version **2.2.0** adds native Ubuntu 24.04 x86_64 builds, a Linux SDK with
-four variants, Linux tools and hot reload, and Windows SDK Natvis distribution
-with automatic Visual Studio project integration through CMake.
-The C runtime ABI and domain language are unchanged from 2.1.0.
-See the [2.2.0 release notes](docs/RELEASE_2_2_0.md).
+Version **2.3.0 (in preparation)** adds native negative numeric literals such as
+`(!remember -1.0 is_moving)`, precise numeric debugger labels and signed-value
+diagnostics. Subtraction, negation and decrement remain supported. The C runtime
+ABI and atom layout are unchanged from 2.2.0; tools using the C++ compiler AST
+must be rebuilt. See the [2.3.0 release notes](docs/RELEASE_2_3_0.md).
+For Linux builds, hot reload integration and Windows Natvis distribution, see
+the [2.2.0 release notes](docs/RELEASE_2_2_0.md).
 For the runtime-list, callterm and generated-code features introduced in 2.1.0,
 see its [release notes](docs/RELEASE_2_1_0.md).
 Upgrades from older releases must also follow the

@@ -53,6 +53,10 @@ bool HTNWorldStateLexer::Lex(HTNWorldStateLexerContext& ioWorldStateLexerContext
             Result = LexString(ioWorldStateLexerContext) && Result;
             break;
         }
+        case '-': {
+            Result = LexMinus(ioWorldStateLexerContext) && Result;
+            break;
+        }
         case '\r':
         case ' ': {
             // Whitespace

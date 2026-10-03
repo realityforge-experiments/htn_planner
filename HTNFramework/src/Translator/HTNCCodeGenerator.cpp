@@ -609,6 +609,12 @@ bool TryEvaluateStaticBuiltinComparison(const HTNCompilerIR& inBuilder, const Co
     }
 }
 
+std::string FormatCIntegerLiteral(const int32 inValue)
+{
+    // MSVC parses 2147483648 as unsigned before applying unary minus (C4146).
+    return inValue == std::numeric_limits<int32>::min() ? "INT32_MIN" : std::to_string(inValue);
+}
+
 std::string FormatCFloatLiteral(const float inValue)
 {
     // A C floating suffix may only follow a floating constant.  Streaming a
@@ -712,7 +718,7 @@ std::string EmitGeneratedArithmeticValue(CodeWriter& W,
         W.Out << inIndent << "HTNAtom " << Name << ";\n";
         W.Out << inIndent << "HTNAtom_Init(&" << Name << ");\n";
         if (inValue.AtomType == HTN_ATOM_TYPE_INT)
-            W.Out << inIndent << "HTNAtom_SetInt(&" << Name << ", " << inValue.IntValue << ");\n";
+            W.Out << inIndent << "HTNAtom_SetInt(&" << Name << ", " << FormatCIntegerLiteral(inValue.IntValue) << ");\n";
         else if (inValue.AtomType == HTN_ATOM_TYPE_FLOAT)
             W.Out << inIndent << "HTNAtom_SetFloat(&" << Name << ", " << FormatCFloatLiteral(inValue.FloatValue) << ");\n";
         return "&" + Name;
@@ -1726,7 +1732,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             Out << "    atom->type = HTN_ATOM_TYPE_BOOL;\n";
             break;
         case HTN_ATOM_TYPE_INT:
-            Out << "    atom->value.int_value = " << V.IntValue << ";\n";
+            Out << "    atom->value.int_value = " << FormatCIntegerLiteral(V.IntValue) << ";\n";
             Out << "    atom->type = HTN_ATOM_TYPE_INT;\n";
             break;
         case HTN_ATOM_TYPE_FLOAT:
@@ -1797,7 +1803,7 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
             Out << "    atom->type = HTN_ATOM_TYPE_BOOL;\n";
             break;
         case HTN_ATOM_TYPE_INT:
-            Out << "    atom->value.int_value = " << V.IntValue << ";\n";
+            Out << "    atom->value.int_value = " << FormatCIntegerLiteral(V.IntValue) << ";\n";
             Out << "    atom->type = HTN_ATOM_TYPE_INT;\n";
             break;
         case HTN_ATOM_TYPE_FLOAT:

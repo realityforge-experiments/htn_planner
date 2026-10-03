@@ -4,6 +4,7 @@
 
 #include "HTNLexerHelpers.h"
 #include "Parser/HTNLexerContextBase.h"
+#include "Parser/HTNParserError.h"
 #include "Parser/HTNTokenType.h"
 
 #include <charconv>
@@ -41,6 +42,39 @@ void HTNLexerBase::LexIdentifier(const std::unordered_map<std::string, HTNTokenT
     {
         ioLexerContext.AddToken(HTNAtomOwner(Lexeme), TokenType HTN_LOG_ONLY(, Lexeme));
     }
+}
+
+bool HTNLexerBase::LexMinus(HTNLexerContextBase& ioLexerContext) const
+{
+    const char Next = ioLexerContext.GetCharacter(1);
+    if (HTNLexerHelpers::IsDigit(Next))
+        return LexNumber(ioLexerContext);
+
+    const bool IsDecrement = Next == '-';
+    const char Suffix = ioLexerContext.GetCharacter(IsDecrement ? 2 : 1);
+    if (HTNLexerHelpers::IsAlphanumeric(Suffix) || Suffix == '.' || Suffix == '-')
+    {
+        HTNSourceRange Range;
+        Range.Begin = {ioLexerContext.GetPosition(), static_cast<int>(ioLexerContext.GetRow() + 1),
+                       static_cast<int>(ioLexerContext.GetColumn() + 1)};
+        char Character = ioLexerContext.GetCharacter();
+        while (HTNLexerHelpers::IsAlphanumeric(Character) || Character == '.' || Character == '-')
+        {
+            ioLexerContext.AdvancePosition();
+            Character = ioLexerContext.GetCharacter();
+        }
+        Range.End = {ioLexerContext.GetPosition(), static_cast<int>(ioLexerContext.GetRow() + 1),
+                     static_cast<int>(ioLexerContext.GetColumn() + 1)};
+        const auto Text = ioLexerContext.GetText().substr(Range.Begin.Offset, Range.End.Offset - Range.Begin.Offset);
+        ioLexerContext.SetLastError("Invalid negative literal '" + Text + "'. " + HTNNegativeLiteralDiagnostic, Range);
+        return false;
+    }
+
+    ioLexerContext.AdvancePosition();
+    if (IsDecrement) ioLexerContext.AdvancePosition();
+    ioLexerContext.AddToken(HTNAtomOwner(), IsDecrement ? HTNTokenType::DECREMENT : HTNTokenType::MINUS
+        HTN_LOG_ONLY(, IsDecrement ? "--" : "-"));
+    return true;
 }
 
 bool HTNLexerBase::LexNumber(HTNLexerContextBase& ioLexerContext) const

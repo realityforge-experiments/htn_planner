@@ -30,6 +30,42 @@ void ExpectLocation(const HTNDiagnostic& inDiagnostic, const std::string& inFile
 }
 } // namespace
 
+TEST(HTNFrontendDiagnosticsTest, NegativeLiteralsAndOperatorsAreAccepted)
+{
+    const std::string Source = "(:domain Root top_level_domain "
+        "(:method (run) top_level_method (ready "
+        "(and (= ?value -2) (== (- ?value 1) -3) (< -0.5 0.0)) "
+        "((!act -1 -1.0 -123.456 (- 5 2) (- 1.0) (-- 1.5) (-2 -0.5))))))";
+    HTNDiagnosticSink Diagnostics;
+    EXPECT_TRUE(LoadFrontend(Source, Diagnostics))
+        << (Diagnostics.HasErrors() ? Diagnostics.GetFirstError()->Message : "");
+
+    const std::string Text = "-1 -0.5 -2147483648";
+    std::vector<HTNToken> Tokens;
+    HTNCompilerDomainLexerContext Context(Text, Tokens);
+    ASSERT_TRUE(HTNCompilerDomainLexer().Lex(Context));
+    ASSERT_EQ(Tokens.size(), 4u);
+    EXPECT_EQ(Tokens[0].GetType(), HTNTokenType::NUMBER);
+    EXPECT_EQ(Tokens[0].GetValue().value.int_value, -1);
+    EXPECT_EQ(Tokens[1].GetValue().type, HTN_ATOM_TYPE_FLOAT);
+    EXPECT_FLOAT_EQ(Tokens[1].GetValue().value.float_value, -0.5f);
+    EXPECT_EQ(Tokens[2].GetSourceRange().End.Offset, Text.size());
+}
+
+TEST(HTNFrontendDiagnosticsTest, MalformedNegativeLiteralsHaveLocatedDiagnostics)
+{
+    for (const char* Value : {"-.", "-abc", "--1", "-2147483649"})
+    {
+        SCOPED_TRACE(Value);
+        const std::string Source = "(:domain Root top_level_domain\n"
+            "(:method (run) top_level_method (ready () ((!act " + std::string(Value) + ")))))";
+        HTNDiagnosticSink Diagnostics;
+        EXPECT_FALSE(LoadFrontend(Source, Diagnostics));
+        ASSERT_TRUE(Diagnostics.HasErrors());
+        ExpectLocation(*Diagnostics.GetFirstError(), "Root.domain", Source, Source.find(Value));
+    }
+}
+
 TEST(HTNFrontendDiagnosticsTest, CommentsTerminateAtPhysicalEof)
 {
 

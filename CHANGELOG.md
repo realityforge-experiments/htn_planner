@@ -3,6 +3,20 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
+## 2.3.0 - Unreleased
+
+- Accept native negative integer and float literals in every numeric value context,
+  including static/runtime lists, tasks, callterms, axioms and world-state files.
+- Preserve subtraction, unary negation and decrement syntax; generate negative atoms
+  directly and emit `INT32_MIN` portably for the minimum signed 32-bit integer.
+- Preserve numeric spelling and source locations in generated debugger labels,
+  including full decimal precision and trailing zeros inside static lists.
+- Add located diagnostics for malformed signed values and overflow, plus lexer,
+  frontend, AST/IR, generated C, runtime, backtracking and deferred regressions.
+- **Compatibility:** C runtime API/ABI, RuntimeBridge ABI and atom layout are unchanged.
+  Rebuild tools using the C++ compiler AST; translate domains that adopt the new syntax.
+- See [2.3.0 release preparation and validation status](docs/RELEASE_2_3_0.md).
+
 ## 2.2.0 - 2026-10-03
 
 - Include `debug/HTN.natvis` in the Windows SDK, propagate it to CMake consumers,

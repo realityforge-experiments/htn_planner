@@ -1,11 +1,14 @@
 # HTN SDK
 
-Version 2.2.0 adds Linux platform support and includes `debug/HTN.natvis` in
-the Windows SDK, with automatic CMake/Visual Studio project integration.
-This package targets Windows; Linux has a separate archive. The exact package
-version, including any candidate suffix, is recorded in `manifest.json`.
-The C API, runtime ABI and atom layout are unchanged from 2.1.0.
-See [2.2.0 compatibility and release notes](docs/RELEASE_2_2_0.md).
+Version 2.3.0 adds native negative numeric literals and preserves numeric spelling
+in generated debugger labels. Existing subtraction, negation and decrement remain
+supported. This package targets Windows; Linux has a separate archive. The exact
+package version, including any candidate suffix, is recorded in `manifest.json`.
+The C runtime API/ABI and atom layout are unchanged from 2.2.0. Rebuild tools using
+the C++ compiler AST, and translate domains that adopt the new syntax.
+See [2.3.0 compatibility and release notes](docs/RELEASE_2_3_0.md).
+Windows Natvis distribution and CMake integration are retained from
+[2.2.0](docs/RELEASE_2_2_0.md).
 When upgrading from before 2.1.0, retain its
 [feature migration requirements](docs/RELEASE_2_1_0.md).
 For upgrades from older releases, also follow [2.0.4 migration](docs/RELEASE_2_0_4.md)

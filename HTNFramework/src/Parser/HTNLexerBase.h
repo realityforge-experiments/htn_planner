@@ -26,6 +26,9 @@ protected:
     // Lexes a number
     bool LexNumber(HTNLexerContextBase& ioLexerContext) const;
 
+    // An adjacent digit starts a signed number; otherwise keep subtraction/decrement.
+    bool LexMinus(HTNLexerContextBase& ioLexerContext) const;
+
     // Lexes a string
     bool LexString(HTNLexerContextBase& ioLexerContext) const;
 

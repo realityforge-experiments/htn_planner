@@ -1,5 +1,10 @@
 # HTN SDK for Linux x86_64
 
+Version 2.3.0 adds native negative numeric literals and precise numeric debugger
+labels. The C runtime API/ABI and atom layout are unchanged from 2.2.0. Rebuild
+tools using the C++ compiler AST and translate domains that adopt the new syntax.
+See [2.3.0 compatibility and release notes](docs/RELEASE_2_3_0.md).
+
 The exact version, compiler and ABI contract are in `manifest.json`.
 Validated on Ubuntu 24.04 with GCC 14 / Clang 18 and libstdc++, C++20 hosts and
 C11 generated domains. System glibc/libstdc++ must be compatible with the build.

@@ -27,6 +27,8 @@ struct Value : Node
 {
     ValueKind Kind = ValueKind::Literal;
     HTNAtomOwner Atom;
+    // Numeric spelling (also inside static lists), retained independently of atom formatting.
+    std::string LiteralText;
     std::shared_ptr<const Value> CallId;
     std::vector<std::shared_ptr<const Value>> CallArguments;
     ArithmeticOperator ArithmeticOp = ArithmeticOperator::Add;

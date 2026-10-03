@@ -1,8 +1,11 @@
 # Domain language guide
 
-This guide describes the domain language supported by HTN Planner **2.1.0**.
+This guide describes the domain language supported by HTN Planner **2.3.0**.
 It starts with a complete example, then explains the syntax and execution rules.
 The linked feature documents provide more detail and migration notes.
+
+Native negative numeric literals are new in 2.3.0; see the
+[syntax and compatibility notes](RELEASE_NOTES_NEGATIVE_LITERALS.md).
 
 The language is a small, declarative **domain-specific language (DSL)** for
 Hierarchical Task Network planning. It uses **S-expressions**: parenthesized forms
@@ -123,8 +126,8 @@ and `method` are reserved.
 
 | Value | Example | Notes |
 | --- | --- | --- |
-| Integer | `42` | Signed 32-bit runtime value. |
-| Float | `0.2`, `10.0` | Single-precision runtime value. |
+| Integer | `42`, `-1` | Signed 32-bit runtime value. |
+| Float | `0.2`, `10.0`, `-0.5` | Single-precision runtime value. |
 | Boolean | `true`, `false` | No implicit truthiness conversion. |
 | Symbol | `moving_to_enemy` | An interned identifier, distinct from a string. |
 | String | `"Moving to enemy"` | Quoted text. |
@@ -134,8 +137,22 @@ and `method` are reserved.
 | Expression | `(+ ?time 2.0)` | Evaluated during decomposition. |
 
 Use decimal notation; scientific notation and hexadecimal literals are not
-supported. Write negative numbers as unary arithmetic expressions, for example
-`(- 3)` or `(- 0.5)`. A leading `-` is an operator token, not part of a literal.
+supported. A minus sign immediately followed by a digit is part of the number:
+`-1`, `-1.0`, `-0.5` and `-123.456` are single literal values. They work wherever
+a positive number works, including constants, lists, facts, assignments and task
+or callterm arguments. Integers must fit in `[-2147483648, 2147483647]`; floats
+must fit in the supported single-precision representation.
+
+Arithmetic still uses an operator in parentheses: `(- 5 2)` subtracts, `(- 1.0)`
+negates, and `(-- 1.5)` decrements. Separate an operator from a numeric operand:
+`(- -2 3)` evaluates to `-5`, whereas `(-2 3)` is a list containing two numbers.
+In a value position, `- 1` is invalid: write the literal `-1` or the expression
+`(- 1)`. `-.`, `-abc` and `--1` are invalid numeric spellings; use `(-- 1)` for
+decrement. Negative literals use prepared values rather than runtime negation;
+source locations include the minus sign. The world-state file reader also accepts
+negative numbers. Generated debugger labels preserve the written numeric spelling,
+including trailing zeros and all decimal digits in scalar and list literals.
+
 Strings do not interpret C-style backslash escapes; an embedded double quote
 cannot be escaped with `\"`.
 
