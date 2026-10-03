@@ -3,7 +3,7 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
-## 2.2.0 - Unreleased
+## 2.2.0 - 2026-10-03
 
 - Include `debug/HTN.natvis` in the Windows SDK, propagate it to CMake consumers,
   and validate its type definitions, checksum and Visual Studio project integration.
