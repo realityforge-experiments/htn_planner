@@ -124,7 +124,7 @@ shell. Packaging a Linux editor extension is a separate deliverable.
 ```sh
 bash BuildAndValidateSDK.sh
 # Optional candidate version; neither command edits VERSION or publishes anything:
-# bash BuildAndValidateSDK.sh --version 2.1.0-linux-candidate.1 --jobs 4
+# bash BuildAndValidateSDK.sh --version 2.2.0-rc.1 --jobs 4
 ```
 
 The version defaults to the repository's `VERSION` file. The script regenerates the

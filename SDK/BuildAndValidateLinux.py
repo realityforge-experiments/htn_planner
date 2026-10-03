@@ -104,7 +104,7 @@ def main():
     copy(root / "ThirdParty/optick/LICENSE", "THIRD_PARTY_NOTICES/Optick-LICENSE.txt")
     for filename in ("LINUX.md", "DOMAIN_LANGUAGE.md", "TYPE_CONVERSION.md", "GENERATED_RECURSION.md", "ASSIGNMENT.md",
                      "AXIOM_OVERLOADS.md", "METHOD_OVERLOADS.md", "MISSING_CALLTERMS.md", "RUNTIME_LISTS.md",
-                     "GENERATED_INSTRUMENTATION.md", "USE_CASES.md", "SDK_VARIANTS.md", "RELEASE_2_1_0.md", "RELEASE_2_0_4.md", "RELEASE_2_0_3.md",
+                     "GENERATED_INSTRUMENTATION.md", "USE_CASES.md", "SDK_VARIANTS.md", "RELEASE_2_2_0.md", "RELEASE_2_1_0.md", "RELEASE_2_0_4.md", "RELEASE_2_0_3.md",
                      "AAA_COMBAT_NPC_DEMO.md", "COMPILER_IR.md", "GENERATED_DEBUGGER.md",
                      "LINUX_SMOKE.md", "RELEASE_2_0_0.md", "RELEASE_NOTES_AXIOM_ASSIGNMENTS.md",
                      "RELEASE_NOTES_BOOLEAN_CALLTERMS.md", "RELEASE_NOTES_GENERATED_DEBUGGER.md", "RELEASE_NOTES_NESTED_CALLS.md",

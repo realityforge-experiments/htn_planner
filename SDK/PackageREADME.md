@@ -1,12 +1,13 @@
 # HTN SDK
 
-Version 2.1.0 adds runtime list expressions, non-boolean callterm diagnostics,
-generated implementation sharing, unreachable-code removal, and translator
-options `--instrumentation=full|none` and `--code-stats`.
-The C ABI and atom layout are unchanged from 2.0.4. Regenerate and recompile
-domains to use the new behavior. Rebuild clients of the C++ compiler APIs and
-handle `HTNCallTermErrorReason::NonBooleanConditionResult` in error callbacks.
-See [2.1.0 compatibility and migration](docs/RELEASE_2_1_0.md).
+Version 2.2.0 adds Linux platform support and includes `debug/HTN.natvis` in
+the Windows SDK, with automatic CMake/Visual Studio project integration.
+This package targets Windows; Linux has a separate archive. The exact package
+version, including any candidate suffix, is recorded in `manifest.json`.
+The C API, runtime ABI and atom layout are unchanged from 2.1.0.
+See [2.2.0 compatibility and release notes](docs/RELEASE_2_2_0.md).
+When upgrading from before 2.1.0, retain its
+[feature migration requirements](docs/RELEASE_2_1_0.md).
 For upgrades from older releases, also follow [2.0.4 migration](docs/RELEASE_2_0_4.md)
 and, when starting from 2.0.2 or earlier, [2.0.3 migration](docs/RELEASE_2_0_3.md).
 

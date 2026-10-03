@@ -3,7 +3,7 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
-## Unreleased
+## 2.2.0 - Unreleased
 
 - Include `debug/HTN.natvis` in the Windows SDK, propagate it to CMake consumers,
   and validate its type definitions, checksum and Visual Studio project integration.
@@ -19,6 +19,7 @@ exceptions are called out explicitly in each release.
 - Document [Linux setup, builds and SDK consumption](docs/LINUX.md).
 - **Compatibility:** no C runtime ABI, RuntimeBridge ABI or atom-layout change.
   Other distributions, architectures, libc++ and other Unix platforms remain unverified.
+- See [2.2.0 release notes and validation status](docs/RELEASE_2_2_0.md).
 
 ## 2.1.0 - 2026-10-01
 

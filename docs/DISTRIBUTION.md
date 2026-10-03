@@ -2,81 +2,94 @@
 
 ## Build and validate
 
-Run the complete Windows x64 release gate from the repository root:
+Run the appropriate command from the repository root. Both read `VERSION` unless
+an explicit candidate override is supplied; neither command publishes a release.
 
-```bat
-BuildAndValidateSDK.bat
+Windows PowerShell:
+
+```powershell
+.\BuildAndValidateSDK.bat
+# Candidate only: .\BuildAndValidateSDK.bat -Version 2.2.0-rc.1
 ```
 
-The command reads `VERSION`, generates `HTNSDK.sln`, rebuilds all eight SDK
-variants, creates the package, extracts it into a temporary directory and builds
-and runs its external consumers. It stops on the first failure.
+Inside Ubuntu, after completing [Linux setup](LINUX.md), including `PREMAKE5`:
 
-The output is written to:
+```sh
+bash BuildAndValidateSDK.sh
+# Candidate only: bash BuildAndValidateSDK.sh --version 2.2.0-rc.1
+```
+
+Each script rebuilds the SDK variants, packages them, extracts the archive to a
+fresh external directory, and builds/runs consumers. Windows produces eight CRT,
+configuration and instrumentation combinations. Linux produces four variants and
+validates consumers with both GCC 14 and Clang 18/libstdc++.
+
+Outputs:
 
 ```text
 dist/HTNSDK-<version>-windows-x86_64/
 dist/HTNSDK-<version>-windows-x86_64.zip
+dist/HTNSDK-<version>-windows-x86_64.zip.sha256
+dist/HTNSDK-<version>-linux-x86_64/
+dist/HTNSDK-<version>-linux-x86_64.tar.gz
+dist/HTNSDK-<version>-linux-x86_64.tar.gz.sha256
 ```
 
-Existing versioned output is preserved. During local iteration, pass `-Force` to
-`PackageSDK.cmd` only when replacing that exact local package is intentional.
+Existing versioned output is preserved by default. Use a new candidate identifier
+when iterating; never overwrite a published release. Build final packages with the
+final version instead of renaming candidate files. The manifests and provenance
+must agree with the archive filenames.
 
 ## Package contents
 
-The package contains:
+- Public headers for HTNFramework and HTNIntegration.
+- Libraries and debug symbols for all supported platform variants.
+- Optional HTNRuntimeBridge DLL/import libraries on Windows, or `.so` on Linux.
+- A standalone Release HTNTranslator and CMake package configuration.
+- Core, integration and dynamically loaded domain examples.
+- `debug/HTN.natvis`; Windows CMake targets attach it to consuming projects.
+- Release notes, language/integration guides, license and attribution notices.
+- Manifest, build provenance, payload checksums and archive SHA-256 sidecar.
 
-- Public headers for `HTNFramework` and `HTNIntegration`.
-- Libraries and symbols for all supported variants.
-- `HTNRuntimeBridge` import libraries, DLLs and symbols.
-- A standalone Release `HTNTranslator`.
-- CMake package configuration and variant metadata.
-- Core, integration and dynamic-domain consumer examples.
-- License, attribution, third-party notices and SHA-256 checksums.
-
-Build trees, tests, demos, editors, source-control metadata and development project
-files are excluded.
+SDL/ImGui, tests, graphical demos, HTNEditor, development build trees and repository
+metadata are excluded from SDK packages. Demos/tools remain available from source;
+HTNEditor is excluded from Linux builds.
 
 ## Components
 
 | Component | Purpose | Required |
 | --- | --- | --- |
-| `HTNFramework` | Atoms, world state, compiler frontend, generated runtime and public C ABI. | Yes |
-| `HTNTranslator` | Domain validation and C source generation. | Yes |
-| `HTNIntegration` | Reference planner hook, planning unit and active-plan handling. | No |
-| `HTNRuntimeBridge` | Calls from dynamically loaded domain modules into the host runtime. | No |
+| HTNFramework | Atoms, world state, compiler frontend, generated runtime and public C ABI. | Yes |
+| HTNTranslator | Domain validation and C source generation. | Yes |
+| HTNIntegration | Reference planner hook, planning unit and active-plan handling. | No |
+| HTNRuntimeBridge | Calls from dynamically loaded domain modules into the host runtime. | No |
 
-Core consumers can use `HTNPlanner.h` and manage generated storage directly.
-Engine integrations can use `HTNIntegration.h`. Dynamic domain modules additionally
-use the bridge matching the selected SDK variant.
+The client owns action execution and hot reload orchestration, including module
+loading, synchronization and lifetime. Use the bridge matching the host and domain
+variant; SDK installation does not implement engine hot reload automatically.
 
 ## External validation
 
-The packaged `ValidatePackage.cmd` builds consumers using only extracted package
-files. Validation covers:
+Windows `ValidatePackage.cmd` covers eight variants: 24 consumer executions and
+eight object/export checks. It rejects incompatible CRT/unknown variants and
+requires the Natvis definitions, checksum and generated project attachments.
 
-- Direct use of the generated runtime.
-- The reference C++ integration.
-- Translation and compilation of domain source.
-- Dynamic domain loading through `HTNRuntimeBridge`.
-- Instrumented debugger event capture.
-- Rejection of incompatible CRT and unknown variant selections.
+Linux `ValidatePackage.sh` covers four variants per compiler: 12 consumer
+executions, four ELF export audits and four incompatible-domain ABI checks.
+Running it with both GCC and Clang gives 40 checks and six negative configuration
+checks (unknown variant, old libstdc++ ABI and libstdc++ debug mode per compiler).
 
-A successful release gate reports all eight variants, 24 consumer executions and
-8 object/export checks. The latter compare generated module references against
-the RuntimeBridge DLL exports and import library.
+Both validate artifact provenance and checksums using the extracted SDK. Record
+the script's printed log locations; Linux packaging also preserves detailed
+consumer logs under `build/sdk-linux/<build-id>/external/`.
 
-CoreConsumer checks missing-callterm policies, including Release fallbacks with
-NDEBUG. Consumers use only extracted package files. The build also runs
-`SDK/ValidateSourceBoundary.ps1` to reject legacy frontend source dependencies.
+## Compatibility
 
-The hot reload demo validates definitions before invoking module lifecycle
-callbacks. Its headless self-test rejects a malformed fact-name table and checks
-unloading and recovery of the previous valid module.
+Version 2.2.0 retains the C API, generated planner ABI, RuntimeBridge ABI and atom
+layout from 2.1.0. Use the manifest and matching headers as the authoritative ABI
+values for the selected variant. Windows and Linux require separate native builds;
+an ABI identifier does not make binaries portable between operating systems.
 
-## 2.0.3 descriptor update
-
-Initialization callterm validation extends `HTNGeneratedPlannerDefinition`.
-Regenerate domains and rebuild their host using matching headers. Current planner
-ABI values are plain `0x48540005`, debug `0x48550006`, profiling `0x48560005`,
-and debug/profiling `0x48570006`. See [callterm validation](MISSING_CALLTERMS.md#initialization-validation-unreleased).
+Follow [2.2.0 compatibility notes](RELEASE_2_2_0.md),
+[2.1.0 migration](RELEASE_2_1_0.md), and the earlier
+[2.0.4 migration requirements](RELEASE_2_0_4.md) when upgrading older integrations.

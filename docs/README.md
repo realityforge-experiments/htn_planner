@@ -4,6 +4,8 @@
 - [Linux validation record](LINUX_SMOKE.md)
 - [Domain language: tutorial and reference](DOMAIN_LANGUAGE.md)
 
+- [2.2.0 release notes: Linux SDK and Natvis](RELEASE_2_2_0.md)
+
 - [2.1.0 release notes](RELEASE_2_1_0.md)
 - [Runtime list expressions](RUNTIME_LISTS.md)
 - [Standalone callterm conditions](RELEASE_NOTES_BOOLEAN_CALLTERMS.md)
