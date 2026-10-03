@@ -3,6 +3,19 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
+## Unreleased
+
+- Add native Ubuntu 24.04 x86_64 builds with GCC 14 and Clang 18/libstdc++ for
+  the generated runtime, translator, integration, visual demos/debugger, language
+  server, benchmarks and tests. HTNEditor remains Windows-only and experimental.
+- Add Linux hot reload compilation/loading through the demo's existing client
+  orchestration, plus automated pipeline and language-server protocol checks.
+- Add four Linux SDK variants, CMake integration, archive/SHA-256 packaging and
+  external consumer validation with both compilers, including incompatible-ABI checks.
+- Document [Linux setup, builds and SDK consumption](docs/LINUX.md).
+- **Compatibility:** no C runtime ABI, RuntimeBridge ABI or atom-layout change.
+  Other distributions, architectures, libc++ and other Unix platforms remain unverified.
+
 ## 2.1.0 - 2026-10-01
 
 - Add a [domain language tutorial and reference](docs/DOMAIN_LANGUAGE.md),

@@ -10,6 +10,8 @@ public:
     void Render();
 
 private:
+#ifdef HTN_MEMORY_ATOM_DIAGNOSTICS
     HTNMemoryDebugStats mBaseline{};
     bool mHasBaseline = false;
+#endif
 };

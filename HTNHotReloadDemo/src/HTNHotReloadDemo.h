@@ -27,6 +27,7 @@ public:
 
 private:
     friend int HTNHotReloadDemoSelfTest(const std::filesystem::path&, const std::filesystem::path&, bool);
+    static std::filesystem::path ModuleFileName(const char* inName);
     void CompileDomain(const std::filesystem::path& inSource = {});
     bool HotReload();
     bool LoadDomain();
@@ -35,7 +36,7 @@ private:
     void ReadSource();
     void SaveSource();
 
-    std::filesystem::path mRoot, mBin, mActivePath, mCandidatePath, mBackupPath;
+    std::filesystem::path mRoot, mBin, mActivePath, mCandidatePath, mBackupPath, mCompileLogPath;
     HTNCallTermRegistry mRegistry;
     void* mRuntimeModule = nullptr;
     void* mDomainModule = nullptr;

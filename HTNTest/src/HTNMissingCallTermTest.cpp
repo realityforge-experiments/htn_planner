@@ -129,9 +129,13 @@ TEST(HTNCallTermErrorTest, GeneratedCallsReportProvenanceAndPreserveFailureSeman
     {
         HTNCallTermRegistry Registry;
         if (Reason == HTNCallTermErrorReason::MissingBinding)
+        {
             ASSERT_TRUE(Registry.BindMember("probe", "agent", {}, {}));
+        }
         if (Reason == HTNCallTermErrorReason::MissingInstance)
+        {
             ASSERT_TRUE(Registry.BindMember("probe", "agent", [](void*, const HTNCallTermArguments&) { return HTNAtomOwner(true); }, {}));
+        }
         Registry.Bind("identity", [](const HTNCallTermArguments& Args) { return HTNAtomOwner(Args[0]); });
         HTNDatabaseHook Database;
         HTNPlannerHook Hook(Database.GetWorldState(), Registry);
@@ -501,7 +505,9 @@ TEST(HTNCallTermErrorTest, ArgumentAndConversionErrorsSharePolicyForBothInvocati
                         EXPECT_EQ(Report.Info.ActualAtomType, static_cast<uint32_t>(HTNAtomGetType(*Test.Arguments[Test.Index].Get())));
                     }
                     if (Test.Reason == HTNCallTermErrorReason::ArgumentConversionFailed)
+                    {
                         EXPECT_STREQ(Report.Info.ExpectedTypeName, "ErrorConversionValue");
+                    }
                 }
             }
 }

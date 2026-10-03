@@ -9,7 +9,7 @@
 #include "Translator/HTNCompilerIRBuilder.h"
 #include "Translator/HTNGeneratedDebugger.h"
 #include "Translator/HTNTranslation.h"
-#include "gtest/gtest.h"
+#include "HTNGTest.h"
 #include <fstream>
 #include <set>
 
@@ -320,6 +320,6 @@ TEST_P(HTNSharedImplementationTest, DebuggerPreservesCallableNamesParametersAndS
 #endif
 }
 
-INSTANTIATE_TEST_CASE_P(InstrumentationModes, HTNSharedImplementationTest, testing::Values(true, false),
+INSTANTIATE_TEST_SUITE_P(InstrumentationModes, HTNSharedImplementationTest, testing::Values(true, false),
     [](const testing::TestParamInfo<bool>& Info) { return Info.param ? "Full" : "None"; });
 }

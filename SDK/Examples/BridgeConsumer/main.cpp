@@ -2,10 +2,32 @@
 
 #include "HTNPlanner.h"
 #include "Translator/HTNRuntimeBridge.h"
+#include <cstdio>
+#include <cstring>
+
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
-#include <cstdio>
+using ModuleHandle = HMODULE;
+static ModuleHandle OpenModule(const char* inPath)
+{
+    return LoadLibraryExA(inPath, nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+}
+static auto FindSymbol(ModuleHandle inModule, const char* inName) { return GetProcAddress(inModule, inName); }
+static bool CloseModule(ModuleHandle inModule) { return FreeLibrary(inModule) != 0; }
+#else
+#include <dlfcn.h>
+using ModuleHandle = void*;
+static ModuleHandle OpenModule(const char* inPath)
+{
+    ModuleHandle Module = dlopen(inPath, RTLD_NOW | RTLD_LOCAL);
+    if (!Module) std::fprintf(stderr, "Cannot load %s: %s\n", inPath, dlerror());
+    return Module;
+}
+static auto FindSymbol(ModuleHandle inModule, const char* inName) { return dlsym(inModule, inName); }
+static bool CloseModule(ModuleHandle inModule) { return dlclose(inModule) == 0; }
+#endif
 
 // Reuse the core consumer's plan and debugger assertions through a loaded entry point.
 using GetDefinitionFn = const HTNGeneratedPlannerDefinition* (*)();
@@ -107,30 +129,33 @@ int main(int argc, char** argv)
     if (HTN_RUNTIME_BRIDGE_ABI_VERSION != HTN_EXPECTED_BRIDGE_ABI ||
         HTN_GENERATED_PLANNER_ABI_VERSION != HTN_EXPECTED_PLANNER_ABI) return 18;
 #endif
-    if (argc != 3) return 10;
-    // Restrict dependency lookup to this package's DLL directory and Windows.
-    HMODULE bridge = LoadLibraryExA(argv[2], nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+    const bool ExpectIncompatible = argc == 4 && std::strcmp(argv[3], "--expect-incompatible") == 0;
+    if (argc != 3 && !ExpectIncompatible) return 10;
+    ModuleHandle bridge = OpenModule(argv[2]);
     if (!bridge) return 11;
-    auto bind = reinterpret_cast<HTNRuntimeBridgeBindFn>(GetProcAddress(bridge, "HTNRuntimeBridge_Bind"));
-    if (!bind) { FreeLibrary(bridge); return 12; }
+    auto bind = reinterpret_cast<HTNRuntimeBridgeBindFn>(FindSymbol(bridge, "HTNRuntimeBridge_Bind"));
+    if (!bind) { CloseModule(bridge); return 12; }
 #define CHECK_EXPORT(result, name, parameters, arguments) \
-    if (!GetProcAddress(bridge, #name)) { std::fprintf(stderr, "Missing bridge export: %s\n", #name); FreeLibrary(bridge); return 16; }
+    if (!FindSymbol(bridge, #name)) { std::fprintf(stderr, "Missing bridge export: %s\n", #name); CloseModule(bridge); return 16; }
     HTN_RUNTIME_BRIDGE_FUNCTIONS(CHECK_EXPORT)
 #undef CHECK_EXPORT
     HTNHostRuntimeAPI api = HTNCreateHostRuntimeAPI();
     HTNHostRuntimeAPI invalid = api;
     invalid.abi_version ^= 1;
-    if (bind(&invalid) || !bind(&api)) { FreeLibrary(bridge); return 13; }
-    HMODULE domain = LoadLibraryExA(argv[1], nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (!domain) { FreeLibrary(bridge); return 14; }
-    LoadedDefinition = reinterpret_cast<GetDefinitionFn>(GetProcAddress(domain, "CreatePackageCoreConsumerHTN_GetDefinition"));
-    int result = LoadedDefinition ? RunCoreConsumer() : 15;
-    auto Probe = reinterpret_cast<int(*)()>(GetProcAddress(domain, "HTNBridgeCoverageProbe"));
-    auto Coverage = reinterpret_cast<GetDefinitionFn>(GetProcAddress(domain, "CreateBridgeCoverageHTN_GetDefinition"));
-    if (!result && (!Probe || !Probe() || !Coverage || !RunCoverage(Coverage))) result = 17;
+    if (bind(&invalid) || !bind(&api)) { CloseModule(bridge); return 13; }
+    ModuleHandle domain = OpenModule(argv[1]);
+    if (!domain) { CloseModule(bridge); return 14; }
+    LoadedDefinition = reinterpret_cast<GetDefinitionFn>(FindSymbol(domain, "CreatePackageCoreConsumerHTN_GetDefinition"));
+    int result = !LoadedDefinition ? 15 : ExpectIncompatible
+        ? (HTNGeneratedPlanner_ValidateDefinition(LoadedDefinition()) ? 21 : 0)
+        : RunCoreConsumer();
+    auto Probe = reinterpret_cast<int(*)()>(FindSymbol(domain, "HTNBridgeCoverageProbe"));
+    auto Coverage = reinterpret_cast<GetDefinitionFn>(FindSymbol(domain, "CreateBridgeCoverageHTN_GetDefinition"));
+    if (!result && !ExpectIncompatible && (!Probe || !Probe() || !Coverage || !RunCoverage(Coverage))) result = 17;
     LoadedDefinition = nullptr;
-    if (!FreeLibrary(domain)) result = 19;
-    if (!FreeLibrary(bridge)) result = 20;
-    if (result == 0) std::puts("Domain DLL consumer: PASS (bridge rejects incompatible ABI)");
+    if (!CloseModule(domain)) result = 19;
+    if (!CloseModule(bridge)) result = 20;
+    if (result == 0) std::puts(ExpectIncompatible ? "PASS: incompatible domain ABI rejected before execution"
+        : "Dynamic domain consumer: PASS (bridge rejects incompatible ABI)");
     return result;
 }

@@ -158,7 +158,7 @@ inline HTNAtom HTNAtom::sCreateCall(const HtnSymbol* inHead, TArguments&&... inA
 }
 
 template<typename... TArguments>
-inline HTNAtom HTNAtom::sCreateCallWithContext(void* inClientContext, const HtnSymbol* inHead, TArguments&&... inArguments)
+inline HTNAtom HTNAtom::sCreateCallWithContext([[maybe_unused]] void* inClientContext, const HtnSymbol* inHead, TArguments&&... inArguments)
 {
     constexpr size_t ArgumentCount = sizeof...(TArguments);
     std::array<HTNAtom, ArgumentCount> Arguments{};

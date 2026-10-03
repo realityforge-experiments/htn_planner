@@ -10,7 +10,7 @@
 #include "Hook/HTNPlanningUnit.h"
 #include "Translator/HTNGeneratedDebugger.h"
 #include "../../HTNDemo/src/HTNDemoCallTermReporting.h"
-#include "gtest/gtest.h"
+#include "HTNGTest.h"
 #include <filesystem>
 #include <fstream>
 
@@ -151,11 +151,13 @@ TEST_P(HTNNonBooleanCallTermTest, ValuesRemainValidInAssignmentsComparisonsAndNe
         EXPECT_EQ(Report.Count, 0);
         ASSERT_EQ(Unit.GetCurrentPlan().size(), 1u);
         if (std::string(Entry).find("assignment") != std::string::npos)
+        {
             EXPECT_TRUE(HTNAtom_Equals(&HTNGetTaskArgument(Unit.GetCurrentPlan().front(), 0), Value.Get()));
+        }
     }
 }
 
-INSTANTIATE_TEST_CASE_P(ReturnTypes, HTNNonBooleanCallTermTest, testing::Range(0, 6));
+INSTANTIATE_TEST_SUITE_P(ReturnTypes, HTNNonBooleanCallTermTest, testing::Range(0, 6));
 
 TEST_F(HTNBooleanCallTermTest, TrueAndFalseRemainNormalConditionResults)
 {

@@ -12,7 +12,7 @@
 #include "Translator/HTNCompilerDomainLoader.h"
 #include "Translator/HTNCompilerIRBuilder.h"
 #include "Translator/HTNGeneratedDebugger.h"
-#include "gtest/gtest.h"
+#include "HTNGTest.h"
 #include <fstream>
 
 extern "C" const HTNGeneratedPlannerDefinition* CreateRuntimeListsHTN_GetDefinition(void);
@@ -223,7 +223,10 @@ TEST_P(HTNRuntimeListTest, UnboundAndFailedElementsStopWithoutPartialLists)
         EXPECT_FALSE(Error().empty());
         EXPECT_NE(Error().find("Domains/Test/runtime_lists.domain:"), std::string::npos);
         EXPECT_NE(Error().find("domain 'RuntimeLists'"), std::string::npos);
-        if (std::string(Entry) == "unbound") EXPECT_NE(Error().find("'?io_value' is unbound"), std::string::npos);
+        if (std::string(Entry) == "unbound")
+        {
+            EXPECT_NE(Error().find("'?io_value' is unbound"), std::string::npos);
+        }
         EXPECT_EQ(AfterCalls, 0);
         EXPECT_EQ(OuterCalls, 0);
     }
@@ -357,7 +360,7 @@ TEST_P(HTNRuntimeListTest, NonBooleanConditionStillReportsItsCallTermError)
     EXPECT_GT(ReportColumn, 0u);
 }
 
-INSTANTIATE_TEST_CASE_P(InstrumentationModes, HTNRuntimeListTest, testing::Values(true, false),
+INSTANTIATE_TEST_SUITE_P(InstrumentationModes, HTNRuntimeListTest, testing::Values(true, false),
     [](const testing::TestParamInfo<bool>& Info) { return Info.param ? "Full" : "None"; });
 
 TEST(HTNRuntimeListCompilerTest, StaticListsStayPreparedWhileRuntimeListsKeepEvaluableChildren)
@@ -412,7 +415,9 @@ TEST(HTNRuntimeListCompilerTest, RejectsUnknownNestedVariablesAndReassignmentWit
         EXPECT_GT(Diagnostics.GetDiagnostics()[0].Range.Begin.Column, 0);
         EXPECT_EQ(Diagnostics.GetDiagnostics()[0].FilePath, "runtime_list_invalid.domain");
         if (std::string(Body).find("?unknown") != std::string::npos)
+        {
             EXPECT_NE(Diagnostics.GetDiagnostics()[0].Message.find("Unknown variable"), std::string::npos);
+        }
     }
 }
 }

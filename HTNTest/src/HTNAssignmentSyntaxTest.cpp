@@ -4,7 +4,7 @@
 #include "Translator/HTNCompilerDomainLoader.h"
 #include "Translator/HTNCompilerIRBuilder.h"
 
-#include "gtest/gtest.h"
+#include "HTNGTest.h"
 
 #include <string>
 

@@ -86,6 +86,58 @@ timing samples on the same quiet machine, not diagnostic-build timings or single
 setup/first samples. Regenerate without --no-benchmark-allocations and rebuild to
 restore the probe afterward.
 
+## Local Linux matrix
+
+The local Linux gate uses Ubuntu 24.04 x86_64, GCC 14 or Clang 18 and libstdc++.
+HTNEditor is excluded; its Linux port is deferred while the Windows editor is
+still experimental. The remaining development projects, including both demos,
+the debugger, language server and benchmark, are built by `BuildAndTestLinux.sh`.
+
+From a separate Linux source/build tree for each compiler/options combination:
+
+```sh
+PREMAKE5=/path/to/premake5 CC=gcc-14 CXX=g++-14 \
+    bash BuildAndTestLinux.sh Debug Release Profile ProfileDetailed
+
+# In another tree (Clang uses libstdc++ on this Ubuntu installation):
+PREMAKE5=/path/to/premake5 CC=clang-18 CXX=clang++-18 \
+    bash BuildAndTestLinux.sh Debug Release Profile ProfileDetailed
+
+# In separate diagnostics trees, repeat with each compiler:
+PREMAKE5=/path/to/premake5 CC=gcc-14 CXX=g++-14 \
+    bash BuildAndTestLinux.sh --atom-diagnostics --generated-execution-profiling \
+        --runtime-backtracking-support=enabled Debug Profile ProfileDetailed
+```
+
+The script rejects switching compiler/options in an existing build tree because
+Make can otherwise reuse stale objects. Each configuration runs the complete
+regression suite, LSP protocol smoke, allocation probe, general benchmark, normal
+lifecycle benchmark and hot reload pipeline. The general benchmark includes the
+generated 100-entity workload. Benchmark timings are observations,
+not performance thresholds. Tests check that an Optick capture is written.
+
+Logs are under `build/logs/linux-full-<toolset>-<configuration>-*.log` and captures
+under `build/logs/*.opt`. Preserve the captures before running another configuration.
+See [the Linux validation record](docs/LINUX_SMOKE.md) for actual results and GUI
+coverage. These are local WSL runs; no GitHub Actions execution is implied.
+
+### Linux SDK gate
+
+After following [the Linux setup guide](docs/LINUX.md), run from the repository root:
+
+```sh
+bash BuildAndValidateSDK.sh
+```
+
+This rebuilds four generated-only variants, creates a manifest/provenance and
+checksummed archive, extracts it outside the repository and validates external
+consumers with GCC 14 and Clang 18. Both compilers are required. The 40 CTest checks
+cover Core/Integration/shared-domain consumers, ELF exports and incompatible domain
+ABI rejection; six negative configuration checks cover unknown variants and C++
+standard-library ABI mismatches. Build and detailed consumer logs are retained in
+`build/sdk-linux/<build-id>/`. Existing output candidates are not overwritten.
+The script reads `VERSION` unless `--version` is supplied; it does not publish.
+
 ## Validation boundary
 
 Workflow execution, MSVC/full GoogleTest and whole GUI-solution builds must be

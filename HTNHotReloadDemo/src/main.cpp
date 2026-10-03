@@ -8,6 +8,9 @@
 #include <cstdio>
 #include <filesystem>
 #include <string_view>
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 
 int main(int argc, char** argv)
 {
@@ -28,7 +31,18 @@ int main(int argc, char** argv)
     }
     if (argc > 1 && (std::string_view(argv[1]) == "--self-test" ||
                     std::string_view(argv[1]) == "--pipeline-self-test"))
-        return HTNHotReloadDemoSelfTest(Root, Bin, std::string_view(argv[1]) == "--pipeline-self-test");
+    {
+#ifdef _WIN32
+        // Invalid modules are intentional test fixtures; report loader errors to
+        // the test instead of opening Windows' blocking "Bad Image" dialog.
+        const UINT PreviousErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
+#endif
+        const int Result = HTNHotReloadDemoSelfTest(Root, Bin, std::string_view(argv[1]) == "--pipeline-self-test");
+#ifdef _WIN32
+        SetErrorMode(PreviousErrorMode);
+#endif
+        return Result;
+    }
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0)
     {
         std::fprintf(stderr, "%s\n", SDL_GetError());
@@ -84,7 +98,7 @@ int main(int argc, char** argv)
             ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
             SDL_RenderPresent(Renderer);
         }
-    } // NPCs/units and DLLs destroyed while SDL is still available.
+    } // NPCs/units and modules destroyed while SDL is still available.
     ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();

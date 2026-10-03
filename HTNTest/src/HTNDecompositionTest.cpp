@@ -16,7 +16,7 @@
 
 #include "optick.h"
 #include "gtest/gtest-param-test.h"
-#include "gtest/gtest.h"
+#include "HTNGTest.h"
 
 #include <algorithm>
 #include <execution>
@@ -33,7 +33,6 @@ extern "C" const HTNGeneratedPlannerDefinition* CreateWandererHTN_GetDefinition(
 
 namespace
 {
-const std::string kMainDefaultTopLevelMethodID      = "behave";
 const std::string kUpperBodyDefaultTopLevelMethodID = "behave_upper_body";
 
 class CompilerLoaderForTest

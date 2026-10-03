@@ -229,7 +229,7 @@ private:
         std::uint32_t AttemptCount = 1u;
         int ChoiceIndex = -1;
         bool ChoiceSucceeded = false;
-        std::vector<std::uint32_t> ProjectedChildren;
+        std::vector<std::uint32_t> ProjectedChildren{};
     };
 
     struct ExpandedBacktrackingChoice

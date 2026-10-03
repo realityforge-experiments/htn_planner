@@ -60,7 +60,10 @@ void CheckSourceCapture(const HTNGeneratedDebugger& inDebugger)
         EXPECT_EQ(Node.DisplayName.back(), ')');
         EXPECT_EQ(Node.DisplayName.find("$assignment_call_"), std::string::npos);
         EXPECT_EQ(Node.DisplayName.find("__task_call_result_"), std::string::npos);
-        if (Node.Started) EXPECT_TRUE(Node.Completed);
+        if (Node.Started)
+        {
+            EXPECT_TRUE(Node.Completed);
+        }
         if (Node.ParentEventNodeId == HTN_GENERATED_NO_INDEX) ++Roots;
         for (const auto Child : Node.Children)
         {
@@ -74,7 +77,10 @@ void CheckSourceCapture(const HTNGeneratedDebugger& inDebugger)
             if (!Rendered.empty() && Token.SpaceBefore) Rendered += ' ';
             Rendered += Token.Text;
         }
-        if (!Node.TitleTokens.empty()) EXPECT_EQ(Rendered, Node.DisplayName);
+        if (!Node.TitleTokens.empty())
+        {
+            EXPECT_EQ(Rendered, Node.DisplayName);
+        }
         for (const auto* Values : {&Node.VariablesBefore, &Node.VariablesAfter})
             for (const auto& Value : *Values)
             {
@@ -103,7 +109,9 @@ TEST(HTNNestedCallExpressionTest, TranslatorEmitsInvocationInsteadOfCallNameValu
     {
         EXPECT_NE(Value.Kind, HTNIRValueKind::Call);
         if (Value.StaticValueIndex != HTN_IR_NO_INDEX)
+        {
             EXPECT_NE(IR.Strings.Values[Value.Text], "missing_distance_callterm");
+        }
     }
     const auto Path = std::filesystem::temp_directory_path() / "htn_nested_operator_regression.generated.c";
     HTNCCodeGeneratorOptions Options;
@@ -171,10 +179,14 @@ TEST(HTNNestedCallExpressionTest, MissingPoliciesReasonsCountAndExpressionSource
         int OuterCalls = 0;
         Registry.Bind("identity", [&OuterCalls](const HTNCallTermArguments& Args) { ++OuterCalls; return HTNAtomOwner(Args[0]); });
         if (Reason == HTNCallTermErrorReason::MissingBinding)
+        {
             ASSERT_TRUE(Registry.BindMember("missing_distance_callterm", "agent", {}, {}));
+        }
         if (Reason == HTNCallTermErrorReason::MissingInstance)
+        {
             ASSERT_TRUE(Registry.BindMember("missing_distance_callterm", "agent",
                 [](void*, const HTNCallTermArguments&) { return HTNAtomOwner(0.1f); }, {}));
+        }
         HTNPlannerHook Hook(Database.GetWorldState(), Registry);
         ASSERT_TRUE(Hook.SetGeneratedPlannerDefinition(CreateNestedOperatorCallsHTN_GetDefinition()));
         for (const auto Policy : {HTNCallTermErrorPolicy::FailSilently, HTNCallTermErrorPolicy::Report})
@@ -297,7 +309,10 @@ TEST(HTNNestedCallExpressionTest, ContinueMoveDebuggerPreservesSourceAndExecutio
             for (const auto* Values : {&Node.VariablesBefore, &Node.VariablesAfter})
                 for (const auto& Value : *Values)
                     EXPECT_EQ(Value.Name.find("$assignment_call_"), std::string::npos) << Value.Name;
-            if (Node.Started) EXPECT_TRUE(Node.Completed) << Node.DisplayName;
+            if (Node.Started)
+            {
+                EXPECT_TRUE(Node.Completed) << Node.DisplayName;
+            }
             if (!Node.Started || (Node.DisplayName != Assignment && Node.DisplayName != Comparison)) continue;
             const bool IsComparison = Node.DisplayName == Comparison;
             IsComparison ? ++Comparisons : ++Assignments;

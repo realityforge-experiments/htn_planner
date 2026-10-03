@@ -184,7 +184,7 @@ std::int64_t MeasureListAllocator(TAllocator& ioAllocator, const uint32 inIterat
 
 TEST(HTNAtomOwnerTest, SupportsOwningStdContainersWithoutChangingTheCAtomType)
 {
-    const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
+    [[maybe_unused]] const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
 
     {
         const std::string HeapString(64u, 'x');
@@ -547,7 +547,7 @@ TEST(HTNAtomCallTest, CApiCreatesOwningCallAndCopiesArguments)
 
 TEST(HTNAtomCopyTest, AllocationFailureIsReportedAndLeavesDestinationDestroyable)
 {
-    const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
+    [[maybe_unused]] const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
 
     {
         HTNPooledAtomListAllocator Allocator(1u);
@@ -591,7 +591,7 @@ TEST(HTNAtomCopyTest, CopyRangeFailureDestroysEveryInitializedOutput)
     HTNAtom_SetInt(&Source[0], 1);
     ASSERT_TRUE(HTNAtom_SetListCopy(&Source[1], SourceList.Get()));
 
-    const HTNAtomDebugStats BeforeCopy = HTNAtomDebug_GetStats();
+    [[maybe_unused]] const HTNAtomDebugStats BeforeCopy = HTNAtomDebug_GetStats();
     Allocator.mFailAllocations = true;
 
     HTNAtom Copy[2];
@@ -609,7 +609,7 @@ TEST(HTNAtomCopyTest, CopyRangeFailureDestroysEveryInitializedOutput)
 
 TEST(HTNAtomCallTest, CppCreateCallInfersTypesAndUsesExplicitDestroyOwnership)
 {
-    const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
+    [[maybe_unused]] const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
 
     enum class RoleContext : int32_t { Defensive = 3 };
     const HtnSymbol* Head = HtnSymbol::sGetSymbol("get_priority_for_role");
@@ -669,7 +669,7 @@ TEST(HTNAtomCallTest, FailedCreateLeavesDestroyableUnboundAtom)
 
 TEST(HTNAtomCallTest, CppCreateCallUsesRegisteredCustomTypeConversion)
 {
-    const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
+    [[maybe_unused]] const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
     const HtnSymbol* Head = HtnSymbol::sGetSymbol("move_to");
 
     HTNAtom Call = HTNAtom::sCreateCall(Head, HTNTestVector3{1.0f, 2.0f, 3.0f});
@@ -695,7 +695,7 @@ TEST(HTNAtomCallTest, CppCreateCallUsesRegisteredCustomTypeConversion)
 
 TEST(HTNAtomCallTest, FailedCustomTypeConversionCleansTemporaryAtomAndReturnsDestroyableCall)
 {
-    const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
+    [[maybe_unused]] const HTNAtomDebugStats Before = HTNAtomDebug_GetStats();
     const HtnSymbol* Head = HtnSymbol::sGetSymbol("custom_failure");
 
     HTNAtom Call = HTNAtom::sCreateCall(Head, HTNTestFailingCustomType{});

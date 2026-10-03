@@ -35,24 +35,17 @@ bool WriteFile(const std::filesystem::path& inPath, const std::string& inText)
 }
 
 // Real modules, without video. Pipeline mode uses the SAME async compile path
-// as the button, with an isolated source override. Original DLL is restored after
+// as the button, with an isolated source override. Original module is restored after
 // all NPCs/hooks/modules die, on success AND on ordinary test failure.
 int HTNHotReloadDemoSelfTest(const std::filesystem::path& inRoot, const std::filesystem::path& inBin,
                            bool inTestCompiler)
 {
-#ifndef _WIN32
-    if (inTestCompiler)
-    {
-        std::fputs("Pipeline self-test requires Windows/MSVC; it was NOT executed.\n", stderr);
-        return 2;
-    }
-#endif
-    const auto Active = inBin / "WandererHTN.dll";
-    const auto Original = inBin / "self-test-original" / "WandererHTN.dll";
+    const auto Active = inBin / HTNHotReloadDemo::ModuleFileName("WandererHTN");
+    const auto Original = inBin / "self-test-original" / Active.filename();
     const auto OriginalBytes = ReadFile(Active);
     if (OriginalBytes.empty() || !CopyFile(Active, Original))
     {
-        std::fputs("Self-test: initial DLL backup failed; nothing loaded/modified.\n", stderr);
+        std::fputs("Self-test: initial module backup failed; nothing loaded/modified.\n", stderr);
         return 1;
     }
     const int Result = [&]() -> int
@@ -68,7 +61,7 @@ int HTNHotReloadDemoSelfTest(const std::filesystem::path& inRoot, const std::fil
         if (!Demo.mDefinition) return Fail("initial domain unavailable");
         {
             HTNHotReloadDemo Invalid(inRoot, inBin);
-            Invalid.mActivePath = inBin / "InvalidFactNamesHTN.dll";
+            Invalid.mActivePath = inBin / HTNHotReloadDemo::ModuleFileName("InvalidFactNamesHTN");
             if (Invalid.LoadDomain() || Invalid.mDefinition || Invalid.mDomainModule ||
                 Invalid.mStatus.find("incompatible ABI/lifecycle") == std::string::npos)
                 return Fail("LoadDomain accepted malformed fact names or failed to unload module");
@@ -114,7 +107,8 @@ int HTNHotReloadDemoSelfTest(const std::filesystem::path& inRoot, const std::fil
 
         if (inTestCompiler)
         {
-            const auto FixtureDir = inBin / "pipeline-fixture";
+            // Exercise shell quoting as well as source/include paths with spaces.
+            const auto FixtureDir = inBin / "pipeline fixture's";
             const auto Source = FixtureDir / "Wanderer.domain";
             if (!CopyFile(inRoot / "Domains" / "Includes" / "movement2.domain",
                           FixtureDir / "Includes" / "movement2.domain")) return Fail("fixture include copy");
@@ -214,7 +208,7 @@ int HTNHotReloadDemoSelfTest(const std::filesystem::path& inRoot, const std::fil
             if (!HasMarker("reload-validation-B-deferred", AfterReloadAge)) return Fail("new deferred behavior never executed after moving reload");
         }
         Agent.ReleaseGeneratedPlanner();
-        if (!CopyFile(inBin / "InvalidFactNamesHTN.dll", Demo.mCandidatePath)) return Fail("invalid fact names fixture copy");
+        if (!CopyFile(inBin / HTNHotReloadDemo::ModuleFileName("InvalidFactNamesHTN"), Demo.mCandidatePath)) return Fail("invalid fact names fixture copy");
         const auto ValidRevision = Demo.mActiveRevision;
         Demo.mCandidateReady = true;
         if (Demo.HotReload() || !Demo.mDefinition || Demo.mActiveRevision != ValidRevision ||
@@ -224,12 +218,12 @@ int HTNHotReloadDemoSelfTest(const std::filesystem::path& inRoot, const std::fil
         if (!Agent.DidLastPlanSucceed() || &Agent.GetWorldState() != WorldState)
             return Fail("invalid fact names rollback replan");
         Agent.ReleaseGeneratedPlanner();
-        if (!WriteFile(Demo.mCandidatePath, "Deliberately invalid DLL")) return Fail("invalid DLL write");
+        if (!WriteFile(Demo.mCandidatePath, "Deliberately invalid module")) return Fail("invalid module write");
         const auto Revision = Demo.mActiveRevision;
         Demo.mCandidateReady = true;
         if (Demo.HotReload() || !Demo.mDefinition || Demo.mActiveRevision != Revision ||
             Demo.mStatus.find("previous domain restored") == std::string::npos ||
-            !Agent.AttachGeneratedPlanner(Demo.mDefinition)) return Fail("invalid DLL rollback");
+            !Agent.AttachGeneratedPlanner(Demo.mDefinition)) return Fail("invalid module rollback");
         Step();
         if (!Agent.DidLastPlanSucceed() || &Agent.GetWorldState() != WorldState) return Fail("rollback replan");
         if (!FindMovingTask()) return Fail("movement did not resume after rollback");
@@ -237,18 +231,18 @@ int HTNHotReloadDemoSelfTest(const std::filesystem::path& inRoot, const std::fil
         Demo.mSimulation->ReleaseGeneratedPlanner();
         Demo.UnloadDomain();
         Demo.mCandidateReady = true;
-        if (Demo.HotReload() || Demo.mDefinition) return Fail("unavailable domain accepted invalid DLL");
+        if (Demo.HotReload() || Demo.mDefinition) return Fail("unavailable domain accepted invalid module");
         Demo.Update(0.016f);
         std::puts("Lifecycle checks completed: facts, 8 moving reloads with deferred calls, state retention, resumed movement, rollback, unavailable domain.");
         return 0;
-    }(); // All DLL callbacks/handles gone before restoring the original file.
+    }(); // All module callbacks/handles gone before restoring the original file.
     if (!CopyFile(Original, Active) || ReadFile(Active) != OriginalBytes)
     {
-        std::fputs("Self-test: original DLL restoration FAILED; recover from self-test-original/WandererHTN.dll.\n", stderr);
+        std::fprintf(stderr, "Self-test: original module restoration FAILED; recover from %s.\n", Original.string().c_str());
         return 1;
     }
     if (Result == 0)
-        std::puts(inTestCompiler ? "Hot reload pipeline self-test: PASS (original DLL restored)" :
-                                  "Hot reload self-test: PASS (original DLL restored)");
+        std::puts(inTestCompiler ? "Hot reload pipeline self-test: PASS (original module restored)" :
+                                  "Hot reload self-test: PASS (original module restored)");
     return Result;
 }

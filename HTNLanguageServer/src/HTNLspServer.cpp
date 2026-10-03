@@ -74,57 +74,6 @@ HTNLspJson::Object MakeCompilerDiagnosticFields(
     };
 }
 
-bool PathEquals(const std::filesystem::path& inA, const std::filesystem::path& inB)
-{
-    std::error_code ErrorA;
-    std::error_code ErrorB;
-    const std::filesystem::path CanonicalA = std::filesystem::weakly_canonical(inA, ErrorA);
-    const std::filesystem::path CanonicalB = std::filesystem::weakly_canonical(inB, ErrorB);
-    return (ErrorA ? inA.lexically_normal() : CanonicalA) ==
-           (ErrorB ? inB.lexically_normal() : CanonicalB);
-}
-
-bool RangeContainsOffset(const HTNSourceRange& inRange, const size_t inOffset)
-{
-    return inOffset >= inRange.Begin.Offset && inOffset <= inRange.End.Offset;
-}
-
-bool FindSemanticAtomAtOffset(
-    const std::string& inText,
-    size_t inOffset,
-    size_t& outBegin,
-    size_t& outEnd)
-{
-    const auto IsAtomChar = [](const char Character)
-    {
-        return std::isalnum(static_cast<unsigned char>(Character)) ||
-               Character == '_' || Character == '-' || Character == '?' ||
-               Character == '@' || Character == ':' || Character == '#';
-    };
-
-    if (inText.empty())
-        return false;
-
-    inOffset = std::min(inOffset, inText.size());
-    size_t Probe = inOffset;
-    if (Probe == inText.size() || !IsAtomChar(inText[Probe]))
-    {
-        if (Probe == 0 || !IsAtomChar(inText[Probe - 1]))
-            return false;
-        --Probe;
-    }
-
-    outBegin = Probe;
-    while (outBegin > 0 && IsAtomChar(inText[outBegin - 1]))
-        --outBegin;
-
-    outEnd = Probe + 1;
-    while (outEnd < inText.size() && IsAtomChar(inText[outEnd]))
-        ++outEnd;
-
-    return outBegin < outEnd;
-}
-
 }
 
 HTNLspServer::HTNLspServer(HTNLspTransport& inTransport)

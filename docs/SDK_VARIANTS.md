@@ -1,5 +1,11 @@
 # SDK variants
 
+Linux packages provide four variants (DebugPlain, DebugInstrumented, ReleasePlain,
+ReleaseInstrumented), without the MSVC CRT axis. See the [Linux SDK guide](LINUX.md)
+for build commands, binary compatibility and external consumer validation.
+
+## Windows variants
+
 The Windows x64 SDK ships eight variants. A variant selects the MSVC runtime,
 optimization level and generated execution instrumentation independently.
 

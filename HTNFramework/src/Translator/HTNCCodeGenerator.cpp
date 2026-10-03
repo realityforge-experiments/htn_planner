@@ -1282,9 +1282,13 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
             W.Out << "            { const HTNAtom* existing = HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, "
                   << ElementOutput.VariableSlot << "u); if (existing && !HTNAtom_Equals(existing, &split_element)) split_valid = 0; }\n";
         }
+        else if (ElementOutput.Kind == HTNIRValueKind::Variable)
+        {
+            W.Out << "            split_valid = 0;\n";
+        }
         else
         {
-            W.Out << "            if (!" << ElementReference << " || !HTNAtom_Equals(" << ElementReference
+            W.Out << "            if (!HTNAtom_Equals(" << ElementReference
                   << ", &split_element)) split_valid = 0;\n";
         }
 
@@ -1293,9 +1297,13 @@ void EmitGeneratedConditionLeaf(CodeWriter& W, const HTNCompilerIR& B, const uin
             W.Out << "            { const HTNAtom* existing = HTNGeneratedVariables_Get(&HTN_GENERATED_EXECUTION(context)->variables, "
                   << RemainderOutput.VariableSlot << "u); if (existing && !HTNAtom_Equals(existing, &split_remainder)) split_valid = 0; }\n";
         }
+        else if (RemainderOutput.Kind == HTNIRValueKind::Variable)
+        {
+            W.Out << "            split_valid = 0;\n";
+        }
         else
         {
-            W.Out << "            if (!" << RemainderReference << " || !HTNAtom_Equals(" << RemainderReference
+            W.Out << "            if (!HTNAtom_Equals(" << RemainderReference
                   << ", &split_remainder)) split_valid = 0;\n";
         }
 
@@ -1516,10 +1524,14 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     Out << "#pragma clang diagnostic push\n";
     Out << "#pragma clang diagnostic ignored \"-Wunreachable-code\"\n";
     Out << "#pragma clang diagnostic ignored \"-Wunused-label\"\n";
+    Out << "#pragma clang diagnostic ignored \"-Wunused-function\"\n";
+    Out << "#pragma clang diagnostic ignored \"-Wunused-const-variable\"\n";
     Out << "#elif defined(__GNUC__)\n";
     Out << "#pragma GCC diagnostic push\n";
     Out << "#pragma GCC diagnostic ignored \"-Wunreachable-code\"\n";
     Out << "#pragma GCC diagnostic ignored \"-Wunused-label\"\n";
+    Out << "#pragma GCC diagnostic ignored \"-Wunused-function\"\n";
+    Out << "#pragma GCC diagnostic ignored \"-Wunused-const-variable\"\n";
     Out << "#endif\n\n";
     Out << "#define HTN_NO_INDEX HTN_GENERATED_NO_INDEX\n\n";
 
@@ -3297,8 +3309,11 @@ std::string MakeSource(const HTNCompilerIR& B, const std::string& Prefix, const 
     }
     Out << "        for (reset_index = 0u; reset_index < HTN_GENERATED_EXECUTION(context)->inline_snapshot_count; ++reset_index)\n";
     Out << "            HTNAtom_Unbind(&HTN_GENERATED_EXECUTION(context)->snapshot_values[reset_index]);\n";
-    Out << "        for (reset_index = 0u; reset_index < " << ((B.VariableStringIds.size() + 63u) / 64u) << "u; ++reset_index)\n";
-    Out << "            HTN_GENERATED_EXECUTION(context)->variables.bound_mask[reset_index] = UINT64_C(0);\n";
+    if (!B.VariableStringIds.empty())
+    {
+        Out << "        for (reset_index = 0u; reset_index < " << ((B.VariableStringIds.size() + 63u) / 64u) << "u; ++reset_index)\n";
+        Out << "            HTN_GENERATED_EXECUTION(context)->variables.bound_mask[reset_index] = UINT64_C(0);\n";
+    }
     Out << "        HTN_GENERATED_EXECUTION(context)->inline_pending_count = 0u;\n";
     Out << "        HTN_GENERATED_EXECUTION(context)->inline_snapshot_count = 0u;\n";
     if (inBacktrackingPolicy == HTNGeneratedBacktrackingPolicy::FixedWithOverflow)

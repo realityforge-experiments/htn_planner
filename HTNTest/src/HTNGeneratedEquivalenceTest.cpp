@@ -33,7 +33,7 @@
 #include "Translator/HTNGeneratedDebugger.h"
 
 #include "gtest/gtest-param-test.h"
-#include "gtest/gtest.h"
+#include "HTNGTest.h"
 
 extern "C" const HTNGeneratedPlannerDefinition* CreateEliteNinjaHTN_GetDefinition(void);
 extern "C" const HTNGeneratedPlannerDefinition* CreateGruntHTN_GetDefinition(void);
@@ -165,7 +165,7 @@ uint32_t GetGeneratedPlannerDefinitionCount()
     return static_cast<uint32_t>(sizeof(kGeneratedPlannerRegistrations) / sizeof(kGeneratedPlannerRegistrations[0]));
 }
 
-const HTNGeneratedPlannerDefinition* GetGeneratedPlannerDefinition(const uint32_t inIndex)
+[[maybe_unused]] const HTNGeneratedPlannerDefinition* GetGeneratedPlannerDefinition(const uint32_t inIndex)
 {
     return inIndex < GetGeneratedPlannerDefinitionCount() ? kGeneratedPlannerRegistrations[inIndex].definition : nullptr;
 }
@@ -822,9 +822,13 @@ TEST_P(HTNGeneratedEquivalenceTest, GeneratedProducesExpectedResult)
             Name == "LowOrder" ? "low_order" : "idle";
         EXPECT_NE(Plan.front().find(ExpectedState), std::string::npos);
         if (Name == "Melee")
+        {
             EXPECT_NE(Plan.back().find("202"), std::string::npos);
+        }
         if (Name == "Ranged")
+        {
             EXPECT_NE(Plan.back().find("302"), std::string::npos);
+        }
     }
 
     if (std::string_view(TestCase.TestName) == "CallTermCreatesFactVisibleImmediately")
@@ -992,7 +996,7 @@ TEST(HTNGeneratedCodeArchitectureTest, GeneratedMetadataContainsOnlyCompileTimeR
 
 TEST(HTNGeneratedCodeArchitectureTest, GeneratedDomainsDoNotReferenceGenericConditionEvaluator)
 {
-    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath("HTNTest/generated");
+    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath(HTN_TEST_GENERATED_DIRECTORY);
     ASSERT_TRUE(std::filesystem::exists(GeneratedDirectory));
 
     // Guard against accidentally reintroducing retired generic execution layers.
@@ -1048,7 +1052,7 @@ TEST(HTNGeneratedCodeArchitectureTest, GeneratedDomainsDoNotReferenceGenericCond
 
 TEST(HTNGeneratedCodeArchitectureTest, GeneratedDomainsDoNotAllocateDynamically)
 {
-    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath("HTNTest/generated");
+    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath(HTN_TEST_GENERATED_DIRECTORY);
     ASSERT_TRUE(std::filesystem::exists(GeneratedDirectory));
 
     static const char* ForbiddenAllocationTokens[] =
@@ -1090,7 +1094,7 @@ TEST(HTNGeneratedCodeArchitectureTest, GeneratedDomainsDoNotAllocateDynamically)
 
 TEST(HTNGeneratedCodeArchitectureTest, GeneratedCallTermsUsePreparedRegistryEntries)
 {
-    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath("HTNTest/generated");
+    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath(HTN_TEST_GENERATED_DIRECTORY);
     ASSERT_TRUE(std::filesystem::exists(GeneratedDirectory));
 
     size_t CallTermFileCount = 0u;
@@ -1131,7 +1135,7 @@ TEST(HTNGeneratedCodeArchitectureTest, GeneratedCallTermsUsePreparedRegistryEntr
 
 TEST(HTNGeneratedCodeArchitectureTest, PreparedAtomsUseGeneratedStaticPayloads)
 {
-    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath("HTNTest/generated");
+    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath(HTN_TEST_GENERATED_DIRECTORY);
     ASSERT_TRUE(std::filesystem::exists(GeneratedDirectory));
 
     static const char* ForbiddenPreparedPayloadBuilders[] =
@@ -1176,7 +1180,7 @@ TEST(HTNGeneratedCodeArchitectureTest, PreparedAtomsUseGeneratedStaticPayloads)
 
 TEST(HTNGeneratedCodeArchitectureTest, GeneratedDomainsContainNoMutableStaticStorage)
 {
-    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath("HTNTest/generated");
+    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath(HTN_TEST_GENERATED_DIRECTORY);
     ASSERT_TRUE(std::filesystem::exists(GeneratedDirectory));
 
     size_t GeneratedFileCount = 0u;
@@ -1219,7 +1223,7 @@ TEST(HTNGeneratedCodeArchitectureTest, GeneratedDomainsContainNoMutableStaticSto
 
 TEST(HTNGeneratedCodeArchitectureTest, GeneratedDomainsDoNotMutatePlannerContextDescriptor)
 {
-    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath("HTNTest/generated");
+    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath(HTN_TEST_GENERATED_DIRECTORY);
     ASSERT_TRUE(std::filesystem::exists(GeneratedDirectory));
 
     // Generated code may mutate objects referenced by the context (execution/world/debug state),
@@ -1261,7 +1265,7 @@ TEST(HTNGeneratedCodeArchitectureTest, GeneratedPlannerAbiDoesNotDependOnPlanner
                                  std::istreambuf_iterator<char>());
     EXPECT_EQ(HeaderText.find("HTNPlannerExecutionContext"), std::string::npos);
 
-    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath("HTNTest/generated");
+    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath(HTN_TEST_GENERATED_DIRECTORY);
     ASSERT_TRUE(std::filesystem::exists(GeneratedDirectory));
     size_t GeneratedFileCount = 0u;
     for (const std::filesystem::directory_entry& Entry : std::filesystem::recursive_directory_iterator(GeneratedDirectory))
@@ -1309,7 +1313,7 @@ TEST(HTNGeneratedCodeArchitectureTest, GeneratedPlannerAbiUsesSingleDefinitionDe
     EXPECT_EQ(HeaderText.find("HTNGeneratedDomain"), std::string::npos);
     EXPECT_EQ(HeaderText.find("domain_id"), std::string::npos);
 
-    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath("HTNTest/generated");
+    const std::filesystem::path GeneratedDirectory = HTNFileHelpers::MakeAbsolutePath(HTN_TEST_GENERATED_DIRECTORY);
     ASSERT_TRUE(std::filesystem::exists(GeneratedDirectory));
     size_t GeneratedFileCount = 0u;
     for (const std::filesystem::directory_entry& Entry : std::filesystem::directory_iterator(GeneratedDirectory))
@@ -1701,7 +1705,7 @@ TEST(HTNGeneratedConcurrencyTest, PerEntityStateAndDaemonsRemainIsolatedUnderStr
 TEST(HTNGeneratedCodeArchitectureTest, SelfTailRecursiveTasksUseFrameReuseFastPath)
 {
     const std::filesystem::path GeneratedPath =
-        HTNFileHelpers::MakeAbsolutePath("HTNTest/generated/complex_scenario.generated.c");
+        HTNFileHelpers::MakeAbsolutePath(HTN_TEST_GENERATED_DIRECTORY "/complex_scenario.generated.c");
     ASSERT_TRUE(std::filesystem::exists(GeneratedPath));
 
     std::ifstream Input(GeneratedPath, std::ios::binary);
@@ -1753,7 +1757,7 @@ std::string EquivalenceCaseName(const testing::TestParamInfo<HTNEquivalenceCase>
     return inInfo.param.TestName;
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AtomList,
     HTNGeneratedEquivalenceTest,
     testing::Values(
@@ -1768,7 +1772,7 @@ INSTANTIATE_TEST_CASE_P(
         HTNEquivalenceCase{"SplitListBackBoundOutputs", "atom_list_demo", "atom_list_demo", "AtomListDemo", "split_list_back_bound_outputs"}),
     EquivalenceCaseName);
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AAACombatNPC,
     HTNGeneratedEquivalenceTest,
     testing::Values(
@@ -1782,7 +1786,7 @@ INSTANTIATE_TEST_CASE_P(
         HTNEquivalenceCase{"Idle", "AAACombatNPC_idle", "AAACombatNPC", "AAACombatNPC", "run"}),
     EquivalenceCaseName);
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ComplexScenario,
     HTNGeneratedEquivalenceTest,
     testing::Values(
@@ -1794,7 +1798,7 @@ INSTANTIATE_TEST_CASE_P(
         HTNEquivalenceCase{"Recursive100Entities", "complex_scenario_recursive_100", "complex_scenario", "ComplexScenario", "run_scenario"}),
     EquivalenceCaseName);
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     CallTerms,
     HTNGeneratedEquivalenceTest,
     testing::Values(
@@ -1803,7 +1807,7 @@ INSTANTIATE_TEST_CASE_P(
         HTNEquivalenceCase{"CallTermWorldStateMutationSurvivesBacktracking", "callterms", "callterms", "CallTermsDemo", "callterm_world_state_mutation_survives_backtracking"}),
     EquivalenceCaseName);
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     NestedCalls,
     HTNGeneratedEquivalenceTest,
     testing::Values(
@@ -1948,7 +1952,7 @@ TEST(HTNGeneratedArithmeticArgumentTest, HandlesAxiomOutputIoMismatchAndInvalidA
     ExpectPlan("axiom_invalid_output_expression", "!axiom_invalid_output_expression \"controlled_failure\"");
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     NumericExpressions,
     HTNGeneratedEquivalenceTest,
     testing::Values(
@@ -1957,7 +1961,7 @@ INSTANTIATE_TEST_CASE_P(
         HTNEquivalenceCase{"InvalidOperandType", "numeric_expressions", "numeric_expressions", "NumericExpressionsDemo", "invalid_operand_type"}),
     EquivalenceCaseName);
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     Human,
     HTNGeneratedEquivalenceTest,
     testing::Values(
@@ -2122,13 +2126,11 @@ TEST(HTNGeneratedPlannerHookTest, CommonExecutionContextCarriesTopLevelCall)
     HTNAtom Call = HTNAtom::sCreateCall(HtnSymbol::sGetSymbol("behave"));
     ASSERT_TRUE(HTNAtom_IsBound(&Call));
 
-    HTNPlannerExecutionContext ExecutionContext{
-        &Database.GetWorldState(),
-        &PlannerHook.GetCallTermBindingContext(),
-        &Call,
-        nullptr,
-        HTN_BACKTRACKING_ALL,
-        nullptr};
+    HTNPlannerExecutionContext ExecutionContext{};
+    ExecutionContext.WorldState = &Database.GetWorldState();
+    ExecutionContext.CallTermBindingContext = &PlannerHook.GetCallTermBindingContext();
+    ExecutionContext.Call = &Call;
+    ExecutionContext.BacktrackingMode = HTN_BACKTRACKING_ALL;
 
     EXPECT_EQ(ExecutionContext.Call, &Call);
     EXPECT_EQ(HTNGetCallHead(ExecutionContext.Call), HtnSymbol::sGetSymbol("behave"));
@@ -2871,7 +2873,10 @@ TEST(HTNGeneratedAxiomTest, AssignmentsInitializeParameterSlotsAndRestoreOutputs
                       std::vector<std::string>{"!result " + std::to_string(Test.Value)});
 #ifdef HTN_DEBUG_DECOMPOSITION
             for (const auto& Node : Debugger.GetNodes())
-                if (Node.Started) EXPECT_TRUE(Node.Completed) << Node.DisplayName;
+                if (Node.Started)
+                {
+                    EXPECT_TRUE(Node.Completed) << Node.DisplayName;
+                }
 #endif
         }
 }
@@ -2939,7 +2944,10 @@ TEST(HTNGeneratedAxiomTest, NestedChoicesPreserveBindingsAndBacktrack)
         ASSERT_EQ(Generated.DecomposeTopLevelMethod(Entry), HTN_DECOMPOSITION_SUCCEEDED);
 #ifdef HTN_DEBUG_DECOMPOSITION
         for (const auto& Node : Debugger.GetNodes())
-            if (Node.Started) EXPECT_TRUE(Node.Completed) << Node.DisplayName;
+            if (Node.Started)
+            {
+                EXPECT_TRUE(Node.Completed) << Node.DisplayName;
+            }
 #endif
         EXPECT_EQ(FormatPlan(Generated.GetLastDecomposition().GetResult()),
                   (std::vector<std::string>{inExpected}));
@@ -3064,7 +3072,10 @@ void CheckGeneratedRecursiveEntityCount(int32 inEntityCount)
         EXPECT_GT(Info.peak_call_frames, 0u);
         EXPECT_LE(Info.peak_call_frames, Info.call_frame_capacity);
         EXPECT_EQ(Info.last_error, nullptr);
-        if (Attempt != 0) EXPECT_EQ(Info.peak_call_frames, PreviousPeak);
+        if (Attempt != 0)
+        {
+            EXPECT_EQ(Info.peak_call_frames, PreviousPeak);
+        }
         PreviousPeak = Info.peak_call_frames;
         std::printf("Entities=%d attempt=%d peak_frames=%u capacity=%u frame_bytes=%zu execution_bytes=%zu\n",
             inEntityCount, Attempt + 1, Info.peak_call_frames, Info.call_frame_capacity,
@@ -3090,7 +3101,7 @@ TEST_P(HTNGeneratedRecursionStressTest, ProcessesEveryEntityWithoutNativeStackOv
 #endif
 }
 
-INSTANTIATE_TEST_CASE_P(ComplexScenario, HTNGeneratedRecursionStressTest, testing::Values(100, 1000));
+INSTANTIATE_TEST_SUITE_P(ComplexScenario, HTNGeneratedRecursionStressTest, testing::Values(100, 1000));
 
 extern "C" const HTNGeneratedPlannerDefinition* CreateRecursionDispatchHTN_GetDefinition(void);
 

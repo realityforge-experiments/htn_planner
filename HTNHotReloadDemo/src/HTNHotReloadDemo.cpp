@@ -27,33 +27,58 @@ std::string ReadText(const std::filesystem::path& inPath)
     return Text;
 }
 
-[[maybe_unused]] std::string DomainCompilerDefines()
+std::string DomainCompilerDefines()
 {
-    std::string Defines = "/DHTN_GENERATED_MODULE_EXPORTS";
+#ifdef _WIN32
+    const std::string Prefix = " /D";
+#else
+    const std::string Prefix = " -D";
+#endif
+    std::string Defines = Prefix + "HTN_GENERATED_MODULE_EXPORTS";
 #ifdef HTN_DEBUG_DECOMPOSITION
-    Defines += " /DHTN_DEBUG_DECOMPOSITION";
+    Defines += Prefix + "HTN_DEBUG_DECOMPOSITION";
 #endif
 #ifdef HTN_GENERATED_EXECUTION_PROFILING
-    Defines += " /DHTN_GENERATED_EXECUTION_PROFILING";
+    Defines += Prefix + "HTN_GENERATED_EXECUTION_PROFILING";
 #endif
 #ifdef HTN_PROFILE_DETAILED
-    Defines += " /DHTN_PROFILE_DETAILED";
+    Defines += Prefix + "HTN_PROFILE_DETAILED";
 #endif
 #ifdef HTN_MEMORY_ATOM_DIAGNOSTICS
-    Defines += " /DHTN_MEMORY_ATOM_DIAGNOSTICS";
+    Defines += Prefix + "HTN_MEMORY_ATOM_DIAGNOSTICS";
 #endif
 #ifdef HTN_MEMORY_ATOM_DIAGNOSTICS_DETAILED
-    Defines += " /DHTN_MEMORY_ATOM_DIAGNOSTICS_DETAILED";
+    Defines += Prefix + "HTN_MEMORY_ATOM_DIAGNOSTICS_DETAILED";
 #endif
     return Defines;
 }
+
+#ifndef _WIN32
+std::string QuoteShellArgument(const std::string& inArgument)
+{
+    std::string Quoted = "'";
+    for (const char Character : inArgument)
+        Quoted += Character == '\'' ? "'\\''" : std::string(1, Character);
+    return Quoted + "'";
+}
+#endif
+}
+
+std::filesystem::path HTNHotReloadDemo::ModuleFileName(const char* inName)
+{
+#ifdef _WIN32
+    return std::string(inName) + ".dll";
+#else
+    return "lib" + std::string(inName) + ".so";
+#endif
 }
 
 HTNHotReloadDemo::HTNHotReloadDemo(std::filesystem::path inRoot, std::filesystem::path inBin)
     : mRoot(std::move(inRoot)), mBin(std::move(inBin))
-    , mActivePath(mBin / "WandererHTN.dll")
-    , mCandidatePath(mBin / "candidate" / "WandererHTN.dll")
-    , mBackupPath(mBin / "previous" / "WandererHTN.dll")
+    , mActivePath(mBin / ModuleFileName("WandererHTN"))
+    , mCandidatePath(mBin / "candidate" / ModuleFileName("WandererHTN"))
+    , mBackupPath(mBin / "previous" / ModuleFileName("WandererHTN"))
+    , mCompileLogPath(mRoot / "build" / "logs" / ("hot-reload-" HTN_HOT_RELOAD_CONFIGURATION "-compiler.log"))
 {
     AIHTNDemoWandererAgent::BindCallTerms(mRegistry);
 }
@@ -62,7 +87,7 @@ HTNHotReloadDemo::~HTNHotReloadDemo()
 {
     if (mCompiler.joinable())
         mCompiler.join(); // Closing the demo waits for its in-flight compile.
-    mSimulation.reset(); // Units/hooks must die before either DLL is unloaded.
+    mSimulation.reset(); // Units/hooks must die before either module is unloaded.
     UnloadDomain();
     if (mRuntimeModule)
         SDL_UnloadObject(mRuntimeModule);
@@ -72,7 +97,7 @@ void HTNHotReloadDemo::Initialize()
 {
     ReadSource();
     mSimulation = std::make_unique<HTNNPCSimulationPanel>(nullptr, mRegistry);
-    mRuntimeModule = SDL_LoadObject((mBin / "HTNRuntimeBridge.dll").string().c_str());
+    mRuntimeModule = SDL_LoadObject((mBin / ModuleFileName("HTNRuntimeBridge")).string().c_str());
     if (!mRuntimeModule)
     {
         mStatus = std::string("Runtime bridge could not be loaded: ") + SDL_GetError();
@@ -141,41 +166,45 @@ void HTNHotReloadDemo::UnloadDomain()
     mDomainModule = nullptr;
 }
 
-void HTNHotReloadDemo::CompileDomain([[maybe_unused]]const std::filesystem::path& inSource)
+void HTNHotReloadDemo::CompileDomain(const std::filesystem::path& inSource)
 {
     if (mCompiling || mSourceDirty || !mRuntimeModule)
         return;
-#ifndef _WIN32
-    mStatus = "Interactive compilation requires Windows/MSVC in this first version.";
-#else
     mCandidateReady = false;
     std::error_code Error;
     std::filesystem::create_directories(mCandidatePath.parent_path(), Error);
     if (!Error)
         (void)std::filesystem::remove(mCandidatePath, Error);
+    if (!Error)
+        std::filesystem::create_directories(mCompileLogPath.parent_path(), Error);
     if (Error)
     {
-        mStatus = "Candidate directory/file could not be prepared: " + Error.message();
+        mStatus = "Candidate or compiler log directory could not be prepared: " + Error.message();
         return;
     }
     ++mBuildAttempt;
     mCompiling = true;
     mCompileFinished.store(false, std::memory_order_relaxed);
     mStatus = "Compiling candidate; agents keep using the active domain.";
-    const auto Script = mRoot / "HTNHotReloadDemo" / "CompileDomain.cmd";
-    const auto Log = mBin / "candidate" / "Compile.log";
     const auto Source = inSource.empty() ? mRoot / "Domains" / "Wanderer.domain" : inSource;
+#ifdef _WIN32
+    const auto Script = mRoot / "HTNHotReloadDemo" / "CompileDomain.cmd";
     // Only trusted fixed paths/configuration/macros form this command, never editor text.
     // The outer quotes are required by cmd.exe when the script path contains spaces.
     const std::string Command = "\"\"" + Script.string() + "\" \"" +
         HTN_HOT_RELOAD_CONFIGURATION + "\" \"" + DomainCompilerDefines() + "\" \"" + Source.string() + "\" > \"" +
-        Log.string() + "\" 2>&1\"";
+        mCompileLogPath.string() + "\" 2>&1\"";
+#else
+    const auto Script = mRoot / "HTNHotReloadDemo" / "CompileDomain.sh";
+    const std::string Command = "bash " + QuoteShellArgument(Script.string()) + " " +
+        QuoteShellArgument(HTN_HOT_RELOAD_CONFIGURATION) + " " + QuoteShellArgument(DomainCompilerDefines()) + " " +
+        QuoteShellArgument(Source.string()) + " > " + QuoteShellArgument(mCompileLogPath.string()) + " 2>&1";
+#endif
     mCompiler = std::thread([this, Command]
     {
         mCompileExitCode = std::system(Command.c_str());
         mCompileFinished.store(true, std::memory_order_release);
     });
-#endif
 }
 
 void HTNHotReloadDemo::Update(float inDeltaTime)
@@ -184,7 +213,7 @@ void HTNHotReloadDemo::Update(float inDeltaTime)
     {
         mCompiler.join();
         mCompiling = false;
-        mCompileLog = ReadText(mBin / "candidate" / "Compile.log");
+        mCompileLog = ReadText(mCompileLogPath);
         std::error_code Error;
         mCandidateReady = mCompileExitCode == 0 && std::filesystem::is_regular_file(mCandidatePath, Error);
         if (mCandidateReady)

@@ -25,7 +25,7 @@ The repository includes:
 - `HTNTranslator`, which validates domains and emits C source.
 - A visual SDL and ImGui demo with generated execution debugging.
 - An editor, language server, hot reload example, tests and benchmarks.
-- A packageable Windows x64 SDK with CMake integration.
+- Packageable Windows and Linux x64 SDKs with CMake integration.
 
 Version **2.1.0** adds runtime list expressions, explicit
 diagnostics for non-boolean callterm conditions, and smaller generated C through
@@ -68,6 +68,8 @@ execution, scheduling and cancellation.
 
 ## Requirements
 
+### Windows
+
 - Windows x64.
 - Visual Studio 2022 with the Desktop development with C++ workload.
 - MSVC v143 and a Windows SDK.
@@ -76,6 +78,22 @@ execution, scheduling and cancellation.
 
 Premake, SDL, Dear ImGui, GoogleTest and the remaining development dependencies are
 included in the repository.
+
+### Linux
+
+Ubuntu 24.04 x86_64 is validated with GCC 14 and Clang 18 using libstdc++.
+Follow the [Linux build and SDK guide](docs/LINUX.md) for dependency installation,
+compilation, tests, visual demos, hot reload and SDK consumers.
+
+```sh
+bash BuildAndTestLinux.sh Debug Release Profile ProfileDetailed
+bash BuildAndValidateSDK.sh
+```
+
+The SDK script rebuilds all four Linux variants and validates external consumers.
+It reads `VERSION` unless `--version` is supplied; it does not increment the version
+or publish a release. HTNEditor is excluded on Linux while it remains experimental.
+See the [validation record](docs/LINUX_SMOKE.md) for scope and evidence.
 
 ## Build and run the visual demo
 
@@ -217,7 +235,7 @@ host runtime must use matching ABI definitions. See
 
 ## SDK package
 
-To build and validate all supported SDK variants:
+On Windows, build and validate all eight SDK variants with:
 
 ```bat
 BuildAndValidateSDK.bat
@@ -230,6 +248,10 @@ This command:
 3. Creates a versioned directory and ZIP under `dist`.
 4. Extracts the package outside the source tree.
 5. Builds and runs its core, integration and dynamic-domain consumers.
+
+On Linux, `bash BuildAndValidateSDK.sh` builds the four Linux variants, creates a
+`.tar.gz` and SHA-256 sidecar, and validates consumers with GCC and Clang. See
+[the Linux guide](docs/LINUX.md) for dependencies and binary compatibility.
 
 To generate only the SDK solution:
 

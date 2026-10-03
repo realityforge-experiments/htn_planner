@@ -33,6 +33,10 @@ add_dependencies(DomainModule CoreConsumer)
 target_compile_definitions(DomainModule PRIVATE HTN_GENERATED_MODULE_EXPORTS)
 target_link_libraries(DomainModule PRIVATE HTN::HTNRuntimeBridge)
 htn_configure_target(DomainModule)
+if(UNIX)
+    # Reject unresolved runtime functions while linking the domain itself.
+    target_link_options(DomainModule PRIVATE -Wl,-z,defs)
+endif()
 add_executable(BridgeConsumer BridgeConsumer/main.cpp)
 target_link_libraries(BridgeConsumer PRIVATE HTN::HTNFramework)
 htn_configure_target(BridgeConsumer)
@@ -53,6 +57,7 @@ add_custom_command(TARGET BridgeConsumer POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:HTN::HTNRuntimeBridge>" "$<TARGET_FILE_DIR:BridgeConsumer>"
     VERBATIM)
 add_test(NAME BridgeConsumer COMMAND BridgeConsumer "$<TARGET_FILE:DomainModule>" "$<TARGET_FILE:HTN::HTNRuntimeBridge>")
+if(WIN32)
 get_filename_component(_linker_dir "${CMAKE_LINKER}" DIRECTORY)
 add_test(NAME BridgeSymbols COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass
     -File "${CMAKE_CURRENT_SOURCE_DIR}/ValidateBridgeSymbols.ps1"
@@ -60,8 +65,24 @@ add_test(NAME BridgeSymbols COMMAND powershell.exe -NoProfile -ExecutionPolicy B
     -Bridge "$<TARGET_FILE:HTN::HTNRuntimeBridge>"
     -ImportLibrary "$<TARGET_LINKER_FILE:HTN::HTNRuntimeBridge>"
     -Dumpbin "${_linker_dir}/dumpbin.exe")
+else()
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME BridgeSymbols COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ValidateBridgeSymbols.py"
+    "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/DomainModule.dir"
+    "$<TARGET_FILE:HTN::HTNRuntimeBridge>")
+add_library(IncompatibleDomainModule SHARED "${CMAKE_CURRENT_BINARY_DIR}/Core/example.generated.c")
+add_dependencies(IncompatibleDomainModule CoreConsumer)
+target_compile_definitions(IncompatibleDomainModule PRIVATE HTN_GENERATED_MODULE_EXPORTS
+    HTN_GENERATED_PLANNER_ABI_VERSION=0x48540001u)
+target_link_libraries(IncompatibleDomainModule PRIVATE HTN::HTNRuntimeBridge)
+target_link_options(IncompatibleDomainModule PRIVATE -Wl,-z,defs)
+htn_configure_target(IncompatibleDomainModule)
+add_test(NAME IncompatibleDomainABI COMMAND BridgeConsumer "$<TARGET_FILE:IncompatibleDomainModule>"
+    "$<TARGET_FILE:HTN::HTNRuntimeBridge>" --expect-incompatible)
+endif()
 
-if(HTN_VALIDATE_NEGATIVE_CASES)
+if(HTN_VALIDATE_NEGATIVE_CASES AND WIN32)
     # Validation deliberately links a /MDd client to the /MTd SDK.
     add_executable(RuntimeMismatch EXCLUDE_FROM_ALL CoreConsumer/main.cpp "${CMAKE_CURRENT_BINARY_DIR}/Core/example.generated.c")
     add_dependencies(RuntimeMismatch CoreConsumer)

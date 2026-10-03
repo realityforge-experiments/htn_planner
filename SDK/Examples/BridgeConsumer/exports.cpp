@@ -1,9 +1,10 @@
 // Copyright (c) 2026 Jose Antonio Escribano. All rights reserved.
 #include "Translator/HTNRuntimeBridge.h"
+#include "Translator/HTNGeneratedPlanner.h"
 
 // Force real import-library references to every entry of the canonical table.
 // Volatile pointers keep optimized builds from eliminating the link probe.
-extern "C" __declspec(dllexport) int HTNBridgeCoverageProbe()
+extern "C" HTN_GENERATED_MODULE_EXPORT int HTNBridgeCoverageProbe()
 {
 #define CHECK_ENTRY(result, name, parameters, arguments) \
     { auto volatile Pointer = &name; if (!Pointer) return 0; }

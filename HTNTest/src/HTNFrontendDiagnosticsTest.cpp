@@ -58,7 +58,7 @@ TEST(HTNFrontendDiagnosticsTest, CommentsTerminateAtPhysicalEof)
 TEST(HTNFrontendDiagnosticsTest, MalformedSourceFailsWithLocatedDiagnostics)
 {
 
-    for (const std::string Source : {std::string(""), std::string("// no domain"), std::string("(:domain Root top_level_domain"),
+    for (const std::string& Source : {std::string(""), std::string("// no domain"), std::string("(:domain Root top_level_domain"),
                                      std::string("(:domain Root top_level_domain (:method (run) top_level_method (broken)))"),
                                      std::string("(:domain Root top_level_domain (:unknown))"), ValidDomain + "\n(extra)"})
     {
@@ -162,7 +162,7 @@ TEST(HTNFrontendDiagnosticsTest, IncludeFailuresPointToTheResponsibleFile)
     const std::string Cycle     = "// child\r\n (:include \"Root.domain\")\r\n(:domain Base base)";
     const std::string Missing   = "// child\r\n (:include \"__htn_missing_diagnostic_fixture__.domain\")\r\n(:domain Base base)";
     const std::string Malformed = "// child\r\n(:domain Base base $)";
-    for (const std::string Child : {Cycle, Missing, Malformed})
+    for (const std::string& Child : {Cycle, Missing, Malformed})
 
     {
 

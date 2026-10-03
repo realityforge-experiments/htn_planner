@@ -87,7 +87,9 @@ TEST_F(HTNReachabilityTest, RootsAndResolvedEdgesPreserveEntriesWithoutRetaining
             EXPECT_FALSE(Reachable.Conditions[Axiom.Condition]);
         }
         if (Name == "SharedBase::choose_value" || Name == "choose_value" || Name == "candidate")
+        {
             EXPECT_TRUE(Reachable.Axioms[A]) << Name;
+        }
     }
 }
 
@@ -103,9 +105,13 @@ TEST_F(HTNReachabilityTest, EmissionOmitsDeadBodiesTasksAndHelpersInBothModes)
         {
             const auto Suffix = std::to_string(M) + "(";
             if (!Reachable.Methods[M] && !Reachable.Implementations[M])
+            {
                 EXPECT_EQ(Source.find("static int HTN_SHAREDIMPLEMENTATIONS_METHOD_" + Suffix), std::string::npos);
+            }
             if (!Reachable.Implementations[M])
+            {
                 EXPECT_EQ(Source.find("static int HTN_SHAREDIMPLEMENTATIONS_METHOD_BODY_" + Suffix), std::string::npos);
+            }
         }
         for (size_t T = 0; T < IR.Tasks.size(); ++T)
             EXPECT_EQ(Source.find("static int HTN_SHAREDIMPLEMENTATIONS_TASK_" + std::to_string(T) + "(") != std::string::npos,

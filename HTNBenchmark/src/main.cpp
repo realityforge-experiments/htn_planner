@@ -1034,7 +1034,7 @@ void RunGeneratedWorldStateScenarioBenchmark(
     }
 }
 
-const char* ProfileCategoryName(const uint32_t inCategory)
+[[maybe_unused]] const char* ProfileCategoryName(const uint32_t inCategory)
 {
     static const char* Names[] = {
         "fact", "worldstate_count", "worldstate_check", "axiom", "callterm",
@@ -1124,7 +1124,8 @@ void PrintDetailedProfile(Runner& ioRunner, const HTNGeneratedPlannerDefinition&
     (void)inRegistration;
     (void)inIterations;
     std::cout << "\nDetailed category profiling is disabled in this configuration.\n"
-                 "Build HTNBenchmark with ProfileDetailed for generated-execution categories and structural counters.\n";
+                 "Enable --generated-execution-profiling and build HTNBenchmark with ProfileDetailed "
+                 "for generated-execution categories and structural counters.\n";
 #endif
 }
 

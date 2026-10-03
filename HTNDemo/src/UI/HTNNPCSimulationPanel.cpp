@@ -463,7 +463,7 @@ void HTNNPCSimulationPanel::RenderWorldMap()
     {
         for (int X = 0; X < mTerrain.GetWidth(); X += AxisLabelStep)
         {
-            char Label[8];
+            char Label[16];
             std::snprintf(Label, sizeof(Label), "%d", X);
             const ImVec2 TextSize = ImGui::CalcTextSize(Label);
             const float XCenter = GridOrigin.x + (static_cast<float>(X) + 0.5f) * CellSize;
@@ -472,7 +472,7 @@ void HTNNPCSimulationPanel::RenderWorldMap()
 
         for (int Y = 0; Y < mTerrain.GetHeight(); Y += AxisLabelStep)
         {
-            char Label[8];
+            char Label[16];
             std::snprintf(Label, sizeof(Label), "%d", Y);
             const ImVec2 TextSize = ImGui::CalcTextSize(Label);
             const ImVec2 Center = CellCenter(Cell{0, Y});

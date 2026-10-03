@@ -4,6 +4,7 @@ newoption {
     description = "Generate HTNSDK: distributable framework, runtime bridge and translator only"
 }
 local sdk = _OPTIONS["sdk"] ~= nil
+local windows = os.target() == "windows"
 newoption {
     trigger = "test-matrix",
     description = "Build full regression suites in Debug/Release, each Plain/Instrumented"
@@ -37,16 +38,21 @@ newoption {
 }
 
 workspace(sdk and "HTNSDK" or "HTN")
-    location "."
-    startproject(sdk and "HTNTranslator" or "HTNEditor")
+    location(sdk and not windows and "build/sdk" or ".")
+    startproject(sdk and "HTNTranslator" or (windows and "HTNEditor" or "HTNDemo"))
     architecture "x64"
+    cdialect "C11"
     if sdk then
-        configurations {
-            "StaticDebugPlain", "StaticDebugInstrumented",
-            "StaticReleasePlain", "StaticReleaseInstrumented",
-            "DynamicDebugPlain", "DynamicDebugInstrumented",
-            "DynamicReleasePlain", "DynamicReleaseInstrumented"
-        }
+        if windows then
+            configurations {
+                "StaticDebugPlain", "StaticDebugInstrumented",
+                "StaticReleasePlain", "StaticReleaseInstrumented",
+                "DynamicDebugPlain", "DynamicDebugInstrumented",
+                "DynamicReleasePlain", "DynamicReleaseInstrumented"
+            }
+        else
+            configurations { "DebugPlain", "DebugInstrumented", "ReleasePlain", "ReleaseInstrumented" }
+        end
     elseif _OPTIONS["test-matrix"] then
         configurations { "DebugPlain", "DebugInstrumented", "ReleasePlain", "ReleaseInstrumented" }
     else
@@ -54,7 +60,11 @@ workspace(sdk and "HTNSDK" or "HTN")
     end
 
     warnings "Extra"
-    flags { "FatalWarnings" }
+    if windows then
+        flags { "FatalWarnings" } -- Bundled Windows Premake beta2.
+    else
+        fatalwarnings { "All" }
+    end
 
     if _OPTIONS["generated-execution-profiling"] then
         defines { "HTN_GENERATED_EXECUTION_PROFILING" }
@@ -117,11 +127,11 @@ workspace(sdk and "HTNSDK" or "HTN")
     if sdk then
         filter {}
         symbols "On"
-        for _, linkage in ipairs { "Static", "Dynamic" } do
+        for _, linkage in ipairs(windows and { "Static", "Dynamic" } or { "" }) do
             for _, crt in ipairs { "Debug", "Release" } do
                 for _, instrumentation in ipairs { "Plain", "Instrumented" } do
                     filter ("configurations:" .. linkage .. crt .. instrumentation)
-                        staticruntime(linkage == "Static" and "On" or "Off")
+                        if windows then staticruntime(linkage == "Static" and "On" or "Off") end
                         runtime(crt)
                         optimize(crt == "Debug" and "Off" or "Full")
                         defines { crt == "Debug" and "_DEBUG" or "NDEBUG" }
@@ -135,8 +145,28 @@ workspace(sdk and "HTNSDK" or "HTN")
     end
     filter "system:windows"
         systemversion "latest"
+    filter "system:linux"
+        pic "On"
+        buildoptions { "-pthread" }
+        linkoptions { "-pthread" }
+        links { "dl" }
+    filter {}
 
 outputdir = (sdk and "sdk/" or "") .. "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
+local translatorCommand = '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator' .. (windows and '.exe' or '') .. '"'
+
+-- Windows uses the bundled SDL distribution; Linux uses the system development package.
+local function UseSDL()
+    filter "system:windows"
+        includedirs { "ThirdParty/SDL2/include" }
+        libdirs { "ThirdParty/SDL2/lib/%{cfg.architecture}" }
+        links { "SDL2", "SDL2main" }
+        postbuildcommands { "{COPYFILE} %{wks.location}/ThirdParty/SDL2/lib/%{cfg.architecture}/SDL2.dll %{cfg.targetdir}" }
+    filter "system:linux"
+        buildoptions { "`pkg-config --cflags sdl2`" }
+        linkoptions { "`pkg-config --libs sdl2`" }
+    filter {}
+end
 
 -- HTN generated-domain build helpers. Keep these outside individual projects so
 -- HTNDemo and HTNTest use exactly the same generation pipeline.
@@ -179,27 +209,43 @@ local function GetHTNRootDomainFiles()
     return result
 end
 
-local function MakeHTNDomainGenerationCommands(inGeneratedDirectory)
-    local commands = {}
+local function GenerateHTNDomain(inDomainFile, inGeneratedDirectory, inEntryPoint, inOptions)
     local failFast = os.host() == "windows" and " || exit /b 1" or " || exit 1"
+    local outputDirectory = windows and inGeneratedDirectory or (inGeneratedDirectory .. "/%{cfg.buildcfg}")
+    local command = translatorCommand .. ' "%{wks.location}/' .. inDomainFile .. '" ' ..
+        inEntryPoint .. ' "%{wks.location}/' .. outputDirectory .. '" ' .. (inOptions or '') .. failFast
 
-    for _, normalizedDomainFile in ipairs(GetHTNRootDomainFiles()) do
-        local entryPoint = MakeHTNEntryPoint(normalizedDomainFile)
-
-        table.insert(
-            commands,
-            '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" ' ..
-            '"%{wks.location}/' .. normalizedDomainFile .. '" ' ..
-            entryPoint ..
-            ' "%{wks.location}/' .. inGeneratedDirectory .. '"' ..
-            (_OPTIONS["runtime-backtracking-support"] == "enabled" and ' --runtime-backtracking-support=enabled' or '') .. failFast)
+    if windows then
+        prebuildcommands { command }
+    else
+        -- Compile each generated C file with an explicit, unique object name.
+        -- Premake's inferred names collide when one domain has several test variants.
+        local generatedSource = outputDirectory .. "/" .. path.getbasename(inDomainFile) .. ".generated.c"
+        local object = "%{cfg.objdir}/" .. inGeneratedDirectory:gsub("[^%w_]", "_") .. "_" .. path.getbasename(inDomainFile) .. ".o"
+        local dependencies = object:gsub("%.o$", ".d")
+        files { inDomainFile }
+        filter ("files:" .. inDomainFile)
+            buildcommands {
+                "{MKDIR} %{cfg.objdir}", command,
+                '$(CC) $(ALL_CFLAGS) $(FORCE_INCLUDE) -o "' .. object .. '" -MF "' .. dependencies .. '" -c "%{wks.location}/' .. generatedSource .. '"'
+            }
+            buildoutputs { object }
+            buildinputs { "bin/" .. outputdir .. "/HTNTranslator/HTNTranslator", "%{prj.location}/Makefile",
+                os.matchfiles("Domains/**.domain"), os.matchfiles("HTNFramework/src/**.h") }
+        filter {}
     end
+end
 
-    return commands
+local function GenerateHTNDomains(inGeneratedDirectory)
+    for _, normalizedDomainFile in ipairs(GetHTNRootDomainFiles()) do
+        GenerateHTNDomain(normalizedDomainFile, inGeneratedDirectory, MakeHTNEntryPoint(normalizedDomainFile),
+            _OPTIONS["runtime-backtracking-support"] == "enabled" and '--runtime-backtracking-support=enabled' or '')
+    end
 end
 
 local function MakeHTNGeneratedSourceFiles(inGeneratedDirectory)
     local generatedFiles = {}
+    if not windows then return generatedFiles end -- Custom build outputs are compiled by Make.
 
     for _, domainFile in ipairs(GetHTNRootDomainFiles()) do
         table.insert(
@@ -279,7 +325,7 @@ local function AddGeneratedModuleProject(inName, inEntryPoint, inOutputDirectory
 
         targetdir ("bin/" .. outputdir .. "/HTNTest")
         objdir ("int/" .. outputdir .. "/%{prj.name}")
-        files { inOutputDirectory .. "/backtracking_policy.generated.c" }
+        if windows then files { inOutputDirectory .. "/backtracking_policy.generated.c" } end
         includedirs { "HTNFramework/src" }
         defines { "HTN_GENERATED_MODULE_EXPORTS" }
         if inABIVersion then
@@ -287,12 +333,10 @@ local function AddGeneratedModuleProject(inName, inEntryPoint, inOutputDirectory
         end
         links { "HTNRuntimeBridge" }
         dependson { "HTNTranslator" }
-        prebuildcommands {
-            '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" ' ..
-            '"%{wks.location}/Domains/Test/backtracking_policy.domain" ' .. inEntryPoint ..
-            ' "%{wks.location}/' .. inOutputDirectory .. '"' ..
-            (os.host() == "windows" and " || exit /b 1" or " || exit 1")
-        }
+        GenerateHTNDomain("Domains/Test/backtracking_policy.domain", inOutputDirectory, inEntryPoint)
+        filter "system:linux"
+            runpathdirs { "$ORIGIN" }
+        filter {}
 end
 
 AddGeneratedModuleProject("HTNTestDomainModule", "CreateBacktrackingPolicyModuleHTN", "HTNTestDomainModule/generated")
@@ -327,19 +371,18 @@ project "HTNDemo"
             "ThirdParty/imgui/backends/imgui_impl_sdlrenderer2.h",
             "ThirdParty/imgui/backends/imgui_impl_sdlrenderer2.cpp" }
 
-    includedirs { "HTNIntegration/src", "%{prj.name}/src", "HTNFramework/src", "ThirdParty/optick/src", "ThirdParty/SDL2/include", "ThirdParty/imgui", "ThirdParty/imgui/backends" }
+    includedirs { "HTNIntegration/src", "%{prj.name}/src", "HTNFramework/src", "ThirdParty/optick/src", "ThirdParty/imgui", "ThirdParty/imgui/backends" }
 
-    libdirs { "ThirdParty/SDL2/lib/%{cfg.architecture}" }
-    links { "HTNIntegration", "HTNFramework", "SDL2", "SDL2main" }
+    links { "HTNIntegration", "HTNFramework" }
+    UseSDL()
     dependson { "HTNTranslator" }
 
     -- Every root domain is a separate compilation unit. There is deliberately no
     -- generated unity source or global registry: hosts keep per-domain granularity.
     -- Adding/removing a root domain requires regenerating project files so the
     -- corresponding *.generated.c is added/removed from this target.
-    prebuildcommands(MakeHTNDomainGenerationCommands("HTNDemo/generated"))
+    GenerateHTNDomains("HTNDemo/generated")
 
-    postbuildcommands { "{COPYFILE} ../ThirdParty/SDL2/lib/%{cfg.architecture}/SDL2.dll %{cfg.targetdir}" }
 
 -- Isolated reload playground. Only this project opts the reused NPC code into
 -- explicit release/reattach; HTNDemo keeps its normal generated/static path.
@@ -352,17 +395,15 @@ project "HTNHotReloadDemoDomain"
     targetname "WandererHTN"
     targetdir ("bin/" .. outputdir .. "/HTNHotReloadDemo")
     objdir ("int/" .. outputdir .. "/%{prj.name}")
-    files { "HTNHotReloadDemo/generated/Wanderer.generated.c" }
+    if windows then files { "HTNHotReloadDemo/generated/Wanderer.generated.c" } end
     includedirs { "HTNFramework/src" }
     defines { "HTN_GENERATED_MODULE_EXPORTS" }
     links { "HTNRuntimeBridge" }
     dependson { "HTNTranslator" }
-    prebuildcommands {
-        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" ' ..
-        '"%{wks.location}/Domains/Wanderer.domain" CreateWandererHotReloadHTN ' ..
-        '"%{wks.location}/HTNHotReloadDemo/generated"' ..
-        (os.host() == "windows" and " || exit /b 1" or " || exit 1")
-    }
+    GenerateHTNDomain("Domains/Wanderer.domain", "HTNHotReloadDemo/generated", "CreateWandererHotReloadHTN")
+    filter "system:linux"
+        runpathdirs { "$ORIGIN" }
+    filter {}
 
 project "HTNHotReloadInvalidDomain"
     location "HTNHotReloadInvalidDomain"
@@ -372,7 +413,8 @@ project "HTNHotReloadInvalidDomain"
     targetname "InvalidFactNamesHTN"
     targetdir ("bin/" .. outputdir .. "/HTNHotReloadDemo")
     objdir ("int/" .. outputdir .. "/%{prj.name}")
-    files { "HTNHotReloadDemo/generated/Wanderer.generated.c", "HTNHotReloadDemo/Validation/InvalidFactNames.cpp" }
+    files { windows and "HTNHotReloadDemo/generated/Wanderer.generated.c" or "HTNHotReloadDemo/generated/%{cfg.buildcfg}/Wanderer.generated.c",
+            "HTNHotReloadDemo/Validation/InvalidFactNames.cpp" }
     includedirs { "HTNFramework/src" }
     defines { "HTN_GENERATED_MODULE_EXPORTS", "CreateWandererHotReloadHTN_GetDefinition=GetValidWandererDefinition" }
     links { "HTNRuntimeBridge" }
@@ -387,7 +429,7 @@ project "HTNHotReloadDemo"
     objdir ("int/" .. outputdir .. "/%{prj.name}")
     debugdir "%{wks.location}"
     defines { "HTN_HOT_RELOAD_DEMO", 'HTN_HOT_RELOAD_CONFIGURATION="%{cfg.buildcfg}"' }
-    files { "HTNHotReloadDemo/src/**.cpp", "HTNHotReloadDemo/src/**.h", "HTNHotReloadDemo/CompileDomain.cmd",
+    files { "HTNHotReloadDemo/src/**.cpp", "HTNHotReloadDemo/src/**.h", "HTNHotReloadDemo/CompileDomain.cmd", "HTNHotReloadDemo/CompileDomain.sh",
             "HTNDemo/src/AI/AIHTNDemoWandererAgent.cpp", "HTNDemo/src/AI/AIHTNDemoWanderer.cpp",
             "HTNDemo/src/AI/AIHTNDemoPathfinder.cpp", "HTNDemo/src/AI/AIHTNDemoGridTerrainDaemon.cpp",
             "HTNDemo/src/World/**.cpp", "HTNDemo/src/UI/HTNNPCSimulationPanel.cpp",
@@ -397,18 +439,23 @@ project "HTNHotReloadDemo"
             "ThirdParty/imgui/misc/cpp/imgui_stdlib.cpp",
             "ThirdParty/imgui/backends/imgui_impl_sdl2.cpp", "ThirdParty/imgui/backends/imgui_impl_sdlrenderer2.cpp" }
     includedirs { "HTNIntegration/src", "HTNHotReloadDemo/src", "HTNDemo/src", "HTNFramework/src",
-                  "ThirdParty/optick/src", "ThirdParty/imgui", "ThirdParty/SDL2/include" }
-    libdirs { "ThirdParty/SDL2/lib/%{cfg.architecture}" }
-    links { "HTNIntegration", "HTNFramework", "SDL2", "SDL2main" }
+                  "ThirdParty/optick/src", "ThirdParty/imgui" }
+    links { "HTNIntegration", "HTNFramework" }
+    UseSDL()
     dependson { "HTNHotReloadDemoDomain", "HTNRuntimeBridge", "HTNTranslator", "HTNHotReloadInvalidDomain" }
+    filter "system:windows"
     postbuildcommands {
-        "{COPYFILE} %{wks.location}/ThirdParty/SDL2/lib/%{cfg.architecture}/SDL2.dll %{cfg.targetdir}",
         "{COPYFILE} %{wks.location}/bin/" .. outputdir .. "/HTNTest/HTNRuntimeBridge.dll %{cfg.targetdir}",
         "{COPYFILE} %{wks.location}/bin/" .. outputdir .. "/HTNTest/HTNRuntimeBridge.lib %{cfg.targetdir}"
     }
+    filter "system:linux"
+        postbuildcommands { "{COPYFILE} %{wks.location}/bin/" .. outputdir .. "/HTNTest/libHTNRuntimeBridge.so %{cfg.targetdir}" }
+    filter {}
 
 -- HTNEditor
 group "Tools"
+-- The editor remains experimental on Windows; its Linux port is deferred.
+if windows then
 project "HTNEditor"
     location "HTNEditor"
     kind "ConsoleApp"
@@ -434,16 +481,15 @@ project "HTNEditor"
             "ThirdParty/imgui/backends/imgui_impl_sdlrenderer2.cpp" }
 
     includedirs { "%{prj.name}/src", "HTNFramework/src", "ThirdParty/optick/src",
-                  "ThirdParty/SDL2/include", "ThirdParty/imgui", "ThirdParty/imgui/backends" }
+                  "ThirdParty/imgui", "ThirdParty/imgui/backends" }
 
-    libdirs { "ThirdParty/SDL2/lib/%{cfg.architecture}" }
-    links { "HTNFramework", "SDL2", "SDL2main" }
+    links { "HTNFramework" }
+    UseSDL()
     filter "system:windows"
         links { "Comdlg32" }
     filter {}
 
-    postbuildcommands { "{COPYFILE} ../ThirdParty/SDL2/lib/%{cfg.architecture}/SDL2.dll %{cfg.targetdir}" }
-
+end -- Windows-only experimental editor.
 
 -- HTNLanguageServer
 project "HTNLanguageServer"
@@ -506,7 +552,7 @@ project "HTNBenchmark"
 
     links { "HTNIntegration", "HTNFramework" }
     dependson { "HTNTranslator" }
-    prebuildcommands(MakeHTNDomainGenerationCommands("HTNBenchmark/generated"))
+    GenerateHTNDomains("HTNBenchmark/generated")
 
 -- HTNTest
 group "Tests"
@@ -522,12 +568,13 @@ group "Tests"
     files { "%{prj.name}/src/**.cpp",
             "%{prj.name}/src/**.h",
             MakeHTNGeneratedSourceFiles("%{prj.name}/generated"),
-            "%{prj.name}/generated/backtracking_policy_overflow/backtracking_policy.generated.c",
-            "%{prj.name}/generated/backtracking_policy_fixed_small/backtracking_policy.generated.c",
-            "%{prj.name}/generated/backtracking_policy_fixed_enough/backtracking_policy.generated.c",
-            "%{prj.name}/generated/instrumentation_none/runtime_lists.generated.c",
-            "%{prj.name}/generated/instrumentation_none/recursion_dispatch.generated.c",
-            "%{prj.name}/generated/instrumentation_none/shared_implementations.generated.c",
+            windows and {
+                "%{prj.name}/generated/backtracking_policy_overflow/backtracking_policy.generated.c",
+                "%{prj.name}/generated/backtracking_policy_fixed_small/backtracking_policy.generated.c",
+                "%{prj.name}/generated/backtracking_policy_fixed_enough/backtracking_policy.generated.c",
+                "%{prj.name}/generated/instrumentation_none/runtime_lists.generated.c",
+                "%{prj.name}/generated/instrumentation_none/recursion_dispatch.generated.c",
+                "%{prj.name}/generated/instrumentation_none/shared_implementations.generated.c" } or {},
             -- Optick
             "ThirdParty/optick/src/**.cpp",
             "ThirdParty/optick/src/**.h" }
@@ -536,22 +583,27 @@ group "Tests"
 
     links { "HTNIntegration", "HTNFramework" }
     dependson { "HTNTranslator", "HTNTestDomainModule", "HTNTestIncompatibleDomainModule" }
+    defines { windows and 'HTN_TEST_GENERATED_DIRECTORY="HTNTest/generated"' or
+        'HTN_TEST_GENERATED_DIRECTORY="HTNTest/generated/%{cfg.buildcfg}"' }
     filter "system:not windows"
         links { "dl" }
     filter {}
-    prebuildcommands(MakeHTNDomainGenerationCommands("HTNTest/generated"))
-    prebuildcommands {
-        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/runtime_lists.domain" CreateRuntimeListsNoneHTN "%{wks.location}/HTNTest/generated/instrumentation_none" --instrumentation=none' .. (os.host() == "windows" and " || exit /b 1" or " || exit 1"),
-        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/recursion_dispatch.domain" CreateRecursionDispatchNoneHTN "%{wks.location}/HTNTest/generated/instrumentation_none" --instrumentation=none' .. (os.host() == "windows" and " || exit /b 1" or " || exit 1"),
-        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/shared_implementations.domain" CreateSharedImplementationsNoneHTN "%{wks.location}/HTNTest/generated/instrumentation_none" --instrumentation=none' .. (os.host() == "windows" and " || exit /b 1" or " || exit 1")
-    }
-    prebuildcommands {
-        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/backtracking_policy.domain" CreateBacktrackingPolicyOverflowHTN "%{wks.location}/HTNTest/generated/backtracking_policy_overflow" --backtracking-policy=fixed-with-overflow --backtracking-capacity=2' .. (_OPTIONS["runtime-backtracking-support"] == "enabled" and " --runtime-backtracking-support=enabled" or "") .. (os.host() == "windows" and " || exit /b 1" or " || exit 1"),
-        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/backtracking_policy.domain" CreateBacktrackingPolicyFixedSmallHTN "%{wks.location}/HTNTest/generated/backtracking_policy_fixed_small" --backtracking-policy=fixed-capacity --backtracking-capacity=2' .. (_OPTIONS["runtime-backtracking-support"] == "enabled" and " --runtime-backtracking-support=enabled" or "") .. (os.host() == "windows" and " || exit /b 1" or " || exit 1"),
-        '"%{wks.location}/bin/' .. outputdir .. '/HTNTranslator/HTNTranslator.exe" "%{wks.location}/Domains/Test/backtracking_policy.domain" CreateBacktrackingPolicyFixedEnoughHTN "%{wks.location}/HTNTest/generated/backtracking_policy_fixed_enough" --backtracking-policy=fixed-capacity --backtracking-capacity=3' .. (_OPTIONS["runtime-backtracking-support"] == "enabled" and " --runtime-backtracking-support=enabled" or "") .. (os.host() == "windows" and " || exit /b 1" or " || exit 1")
-    }
+    GenerateHTNDomains("HTNTest/generated")
+    for _, domain in ipairs { "runtime_lists", "recursion_dispatch", "shared_implementations" } do
+        GenerateHTNDomain("Domains/Test/" .. domain .. ".domain", "HTNTest/generated/instrumentation_none",
+            MakeHTNEntryPoint(domain):gsub("HTN$", "NoneHTN"), "--instrumentation=none")
+    end
+    local runtimeSupport = _OPTIONS["runtime-backtracking-support"] == "enabled" and " --runtime-backtracking-support=enabled" or ""
+    GenerateHTNDomain("Domains/Test/backtracking_policy.domain", "HTNTest/generated/backtracking_policy_overflow",
+        "CreateBacktrackingPolicyOverflowHTN", "--backtracking-policy=fixed-with-overflow --backtracking-capacity=2" .. runtimeSupport)
+    GenerateHTNDomain("Domains/Test/backtracking_policy.domain", "HTNTest/generated/backtracking_policy_fixed_small",
+        "CreateBacktrackingPolicyFixedSmallHTN", "--backtracking-policy=fixed-capacity --backtracking-capacity=2" .. runtimeSupport)
+    GenerateHTNDomain("Domains/Test/backtracking_policy.domain", "HTNTest/generated/backtracking_policy_fixed_enough",
+        "CreateBacktrackingPolicyFixedEnoughHTN", "--backtracking-policy=fixed-capacity --backtracking-capacity=3" .. runtimeSupport)
 
-    if _OPTIONS["test-matrix"] then
+    if not windows then
+        links { "gtest_main", "gtest" }
+    elseif _OPTIONS["test-matrix"] then
         -- The NuGet targets select their CRT by the exact configuration name
         -- "Debug"; map custom matrix configurations to the correct binaries.
         local gtest = "packages/Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.7"

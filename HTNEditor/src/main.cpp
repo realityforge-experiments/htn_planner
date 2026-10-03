@@ -123,7 +123,7 @@ std::filesystem::path ShowFileDialog(bool save)
 }
 #endif
 
-bool Save(EditorDocument& state, bool saveAs)
+bool Save(EditorDocument& state, [[maybe_unused]] bool saveAs)
 {
 #ifdef _WIN32
     if (saveAs || state.FilePath.empty())
@@ -411,43 +411,6 @@ ImVec4 TokenColor(const std::string& token, HTNCompilerToolingTokenKind semantic
     if (!token.empty() && token[0] == '@') return ImVec4(0.65f, 0.65f, 0.65f, 1.0f);
     return ImGui::GetStyleColorVec4(ImGuiCol_Text);
 }
-
-void RenderHighlightedLine(const std::string& line)
-{
-    size_t i = 0;
-    bool first = true;
-    while (i < line.size())
-    {
-        if (i + 1 < line.size() && line[i] == '/' && line[i + 1] == '/')
-        {
-            if (!first) ImGui::SameLine(0.0f, 0.0f);
-            ImGui::TextColored(ImVec4(0.45f, 0.70f, 0.45f, 1.0f), "%s", line.substr(i).c_str());
-            return;
-        }
-        if (line[i] == '"')
-        {
-            size_t e = i + 1;
-            while (e < line.size()) { if (line[e++] == '"') break; }
-            if (!first) ImGui::SameLine(0.0f, 0.0f);
-            ImGui::TextColored(ImVec4(0.65f, 0.85f, 0.55f, 1.0f), "%s", line.substr(i, e-i).c_str());
-            i = e; first = false; continue;
-        }
-        if (IsWordChar(line[i]))
-        {
-            size_t e = i + 1; while (e < line.size() && IsWordChar(line[e])) ++e;
-            const std::string token = line.substr(i, e-i);
-            if (!first) ImGui::SameLine(0.0f, 0.0f);
-            ImGui::TextColored(TokenColor(token), "%s", token.c_str());
-            i = e; first = false; continue;
-        }
-        size_t e = i + 1; while (e < line.size() && !IsWordChar(line[e]) && line[e] != '"' && !(e+1 < line.size() && line[e]=='/' && line[e+1]=='/')) ++e;
-        if (!first) ImGui::SameLine(0.0f, 0.0f);
-        ImGui::TextUnformatted(line.substr(i, e-i).c_str());
-        i = e; first = false;
-    }
-    if (line.empty()) ImGui::TextUnformatted(" ");
-}
-
 
 struct EditorTextPosition
 {

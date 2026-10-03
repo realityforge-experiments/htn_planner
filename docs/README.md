@@ -1,5 +1,7 @@
 # Documentation
 
+- [Linux build, demos and SDK guide](LINUX.md)
+- [Linux validation record](LINUX_SMOKE.md)
 - [Domain language: tutorial and reference](DOMAIN_LANGUAGE.md)
 
 - [2.1.0 release notes](RELEASE_2_1_0.md)

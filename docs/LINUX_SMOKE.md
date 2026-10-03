@@ -1,47 +1,81 @@
-# Linux generated-path experiment
+# Linux validation
 
-The isolated CMake project targets an experimental Ubuntu 24.04 x86_64
-build using GCC 14 in Debug and Release. This is an initial portability gate,
-not a distributable Linux SDK or a claim that all tools support Linux.
+For installation, compilation, demos and SDK consumption, follow the
+[Linux guide](LINUX.md). This page records the generated public branch's validation;
+local logs and build artifacts are ignored by Git.
 
-```sh
-CC=gcc-14 CXX=g++-14 cmake -S cmake/LinuxSmoke -B build/linux-smoke -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build build/linux-smoke --parallel 2
-ctest --test-dir build/linux-smoke --output-on-failure
-```
+## Merge validation (2026-10-02)
 
-The isolated CMake project builds framework sources with the generated-only SDK
-exclusions, the translator and runtime bridge. It translates a domain with the
-freshly built native translator and compiles the output as C11. The consumer
-checks the exact task and argument after arithmetic evaluation and axiom
-backtracking, checks failure and reuses its storage. Additional checks validate
-the domain frontend and included domains in AAACombatNPC.
+Validated on Ubuntu 24.04 x86_64 under WSL2 with GCC 14.2 and Clang 18.1, both using
+libstdc++. Host sources use C++20 and generated domains use C11. Each compiler used
+a fresh, independent source/build tree containing only this branch's tracked files.
+The source and generated-project audit excludes the interpreter and legacy debugger.
 
-The normal Windows Premake build remains the production entry point. This
-experiment uses CMake to avoid bootstrapping a Linux Premake binary and to keep
-the initial dependency set small. It disables Optick capture (`USE_OPTICK=0`).
-SDL/ImGui, Editor, Language Server, GoogleTest, dynamic bridge loading, hot reload
-and SDK packaging are follow-up gates, not covered by this experiment. Existing
-Windows SDK variant names encode CRT choices and are not applied to Linux.
+| Toolchain | Debug | Release | Profile | ProfileDetailed |
+| --- | ---: | ---: | ---: | ---: |
+| GCC 14 / Linux | 336/336 | 327/327 | 327/327 | 327/327 |
+| Clang 18 / Linux | 336/336 | 327/327 | Not repeated | Not repeated |
+| MSVC v143 / Windows | 336/336 | 327/327 | Not repeated | Not repeated |
 
-## Linux validation status
+Total: **1,980 Linux and 663 Windows passing regression test executions**.
 
-Native GCC/Linux compilation and execution remain unverified.
-The isolated CMake project is experimental; no Linux SDK is distributed.
+Every selected Linux configuration builds all supported projects and runs the
+regression suite, language-server stdio smoke, allocation self-test, general and
+lifecycle benchmarks, and the hot reload pipeline. Profiling configurations also
+produce an Optick capture; the regression checks its signature and nonempty output.
+Windows Debug and Release rebuild the full solution and pass the regression suite
+and hot reload pipeline. HTNEditor builds on Windows and remains excluded on Linux.
 
-## Local ClangCL validation
+The hot reload checks compile and load actual domain modules, change behavior,
+reject invalid/corrupt candidates, preserve state through eight moving reloads
+with deferred calls, and restore the original module.
 
-ClangCL 17.0.3 (Visual Studio 2022, Windows x64) successfully built the generated-only
-framework, translator, runtime bridge and generated C consumer in Debug and Release.
-All three CTest checks passed in each configuration (six successful executions).
-The generated C still produces warnings about unused labels and functions.
-This validates the Clang frontend with the Windows SDK and MSVC standard library;
-GCC, Linux APIs and the Linux ABI remain untested.
+### SDK validation
 
-```powershell
-cmake -S cmake/LinuxSmoke -B build/clang-cl-smoke -G "Visual Studio 17 2022" -A x64 -T ClangCL
-cmake --build build/clang-cl-smoke --config Debug --parallel 2
-ctest --test-dir build/clang-cl-smoke -C Debug --output-on-failure
-cmake --build build/clang-cl-smoke --config Release --parallel 2
-ctest --test-dir build/clang-cl-smoke -C Release --output-on-failure
-```
+Both SDKs were rebuilt, packaged, extracted outside the source repository and
+validated using their packaged translator, headers and libraries:
+
+| Package / consumer compiler | Variants | CTest checks | Negative checks |
+| --- | ---: | ---: | ---: |
+| Linux SDK / GCC 14 | 4 | 20/20 | 3/3 |
+| Linux SDK / Clang 18 | 4 | 20/20 | 3/3 |
+| Windows SDK / MSVC v143 | 8 | 32/32 | 2/2 |
+
+The Linux runs include 24 Core/Integration/Bridge consumer executions, eight ELF
+export audits and eight incompatible-domain ABI rejection checks. Negative
+configurations reject unknown variants and incompatible libstdc++ ABIs. The Windows
+run includes 24 consumer executions and eight object/export audits, plus rejection
+of incompatible CRT and unknown variants. All checks passed in plain and
+instrumented Debug/Release variants. Package checksums, build provenance and
+the generated-only source/header boundary are verified by the SDK scripts.
+
+No published SDK was replaced. The local candidate identifier is
+`2.0.4-linux-merge.1`; it is not a release version change. The repository's `VERSION`
+is unchanged. Linux SDK build ID: `f36658e186be46bb948f56c84ad80cd0`.
+
+### Visual scope
+
+The public Linux HTNDemo and HTNHotReloadDemo each render at least three frames and
+exit cleanly through an injected SDL_QUIT event with the SDL dummy/software driver.
+This is an automated startup/render check, not an interactive debugger or hardware
+GPU certification. Debugger capture/source mapping also have regression coverage.
+
+### Evidence
+
+Paths below are relative to the repository root:
+
+- Linux: `build/logs/merge-linux-public/{gcc,clang}/linux-full-<compiler>-<configuration>-<step>.log`,
+  where steps include `build`, `tests`, `lsp`, `allocations`, `benchmark`, `lifecycle`
+  and `hot-reload`.
+- Windows: `build/logs/merge-linux-public-windows-{Debug,Release}-{build,tests,hot-reload}.log`.
+- Linux SDK build and external consumer logs: `build/logs/merge-linux-public/gcc/sdk/`.
+- Windows SDK and external consumer summary: `build/logs/merge-linux-public-windows-sdk.log`.
+- Detailed Windows consumer and negative-check logs: `build/logs/merge-linux-public/windows-sdk/`.
+- Visual startup: `build/logs/merge-linux-public-gui.log`.
+- Source/project isolation: `build/logs/merge-linux-public-isolation.log`.
+
+These are local runs; no GitHub Actions execution is implied. SDK API and runtime
+ABI versions are unchanged by this merge. Other distributions, architectures,
+libc++, macOS and other Unix systems require separate validation. Linux language
+server/VSIX binary distribution remains a later delivery step; its source-built
+server is included and tested here.
