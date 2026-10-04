@@ -3,7 +3,7 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
-## 2.3.0 - Unreleased
+## 2.3.0 - 2026-10-04
 
 - Accept native negative integer and float literals in every numeric value context,
   including static/runtime lists, tasks, callterms, axioms and world-state files.
@@ -15,7 +15,7 @@ exceptions are called out explicitly in each release.
   frontend, AST/IR, generated C, runtime, backtracking and deferred regressions.
 - **Compatibility:** C runtime API/ABI, RuntimeBridge ABI and atom layout are unchanged.
   Rebuild tools using the C++ compiler AST; translate domains that adopt the new syntax.
-- See [2.3.0 release preparation and validation status](docs/RELEASE_2_3_0.md).
+- See [2.3.0 release notes and validation](docs/RELEASE_2_3_0.md).
 
 ## 2.2.0 - 2026-10-03
 

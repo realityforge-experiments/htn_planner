@@ -1,6 +1,6 @@
 # HTN Planner 2.3.0
 
-Release preparation: **2.3.0**. Not yet published.
+Release: **2.3.0**. Release notes finalized on **2026-10-04**.
 Distribution targets: Windows x86_64 and Ubuntu 24.04 x86_64.
 
 ## Highlights
@@ -54,21 +54,34 @@ Supported Linux scope remains Ubuntu 24.04 x86_64, GCC 14 and Clang 18 with libs
 See the [language guide](DOMAIN_LANGUAGE.md) and
 [detailed syntax notes](RELEASE_NOTES_NEGATIVE_LITERALS.md).
 
-## Validation status
+## Validation
 
-Before export, the feature passed 354 generated-only DebugInstrumented tests and
-345 generated-only ReleasePlain tests on Windows. The private development branch
-also passed complete Linux suites with GCC 14 and generated C11 checks with Clang 18.
-These are source validation results, not validation of a published 2.3.0 SDK.
+Validated against the public sources and SDK candidates on 2026-10-03/04:
 
-Validated against the exported public sources on 2026-10-03:
+- Source regression suites: **354 Windows MSVC Debug tests** and **345 Ubuntu
+  24.04 / GCC 14 Release tests** passed. Clang 18 accepted the generated
+  negative-literal fixture as C11 with full and no generated instrumentation.
+- SDK source-boundary and RuntimeBridge audits passed.
+- Windows **2.3.0** SDK: all eight variants passed validation from a fresh ZIP
+  extraction, with **24 external consumer executions** and eight object/export
+  checks. Incompatible CRT and unknown variants were rejected. Natvis definitions,
+  checksums and Visual Studio project integration passed in every variant.
+  The extracted payload and binary provenance were checked against the archive;
+  a packaged-translator probe accepted negative literals, including `INT32_MIN`.
+- Linux **2.3.0** SDK: all four variants were rebuilt on Ubuntu 24.04 WSL2 using
+  GCC 14. External consumers passed with GCC 14 and Clang 18/libstdc++ from a fresh,
+  relocated archive extraction: **24 executions**, eight ELF audits and eight
+  incompatible-domain ABI rejection checks (**40 checks total**), plus six
+  expected configuration rejections.
+- Final documentation packaging preserved every other payload byte, including
+  binaries, headers, examples, CMake files, manifests and build provenance.
+  Archive/payload checksums and Linux executable permissions were checked again
+  after updating the documentation.
+- The maintainer confirmed successful Windows engine integration, including use
+  of negative literals. That external engine itself has not been tested on Linux.
 
-- Windows MSVC Debug: **354 tests passed** in the complete suite.
-- Ubuntu 24.04 / GCC 14 Release: **345 tests passed** in the complete suite.
-- Clang 18 accepted the generated negative-literal fixture as C11, with full and
-  no generated instrumentation.
-- SDK source-boundary and RuntimeBridge audits passed; both packaging scripts
-  include the new language and release documentation.
+Build IDs: Windows `cf05e2d5f20043468e332d7663904908`;
+Linux `fbba18aeaa024703b1f326606668a5a8`.
 
 Local evidence in the public checkout:
 
@@ -77,26 +90,19 @@ Local evidence in the public checkout:
 - `build/logs/public-negative-literals-export/sdk-source-boundary.log`
 - `build/logs/public-negative-literals-export/runtime-bridge-audit.log`
 - `build/logs/public-negative-literals-export/manifest.json`
+- `build/logs/release-2.3.0-windows/audit.json` and its adjacent `external/` logs
+- `build/logs/release-2.3.0-windows/negative-literal-translator.log`
+- `build/logs/release-2.3.0-linux/build-and-validate.log`
+- `build/logs/release-2.3.0-linux/sdk/fbba18aeaa024703b1f326606668a5a8/consumers-{gcc-14,clang-18}.log`
+- `build/logs/release-2.3.0-finalization/result.json`
 
-These logs are local ignored files, not SDK payloads. Final **2.3.0 SDK archives,
-external package consumers and engine integration have not yet been validated**.
-Build the new packages with:
+These records are local ignored artifacts, not SDK payloads. The finalization
+report records archive hashes, preserved payloads and unchanged published 2.2.0
+archives.
 
-```powershell
-.\BuildAndValidateSDK.bat
-```
+## Release assets
 
-Inside Ubuntu, with the dependencies and `PREMAKE5` from [Linux setup](LINUX.md):
-
-```sh
-bash BuildAndValidateSDK.sh
-```
-
-Both commands take **2.3.0** from `VERSION`. They rebuild the platform variants,
-package the SDK, write SHA-256 sidecars and validate consumers from an extraction.
-Do not replace or rename previously published 2.2.0 archives.
-
-## Planned release assets
+Use the package for your target platform and its matching checksum file:
 
 ```text
 HTNSDK-2.3.0-windows-x86_64.zip
@@ -105,5 +111,5 @@ HTNSDK-2.3.0-linux-x86_64.tar.gz
 HTNSDK-2.3.0-linux-x86_64.tar.gz.sha256
 ```
 
-Complete SDK and engine validation and finalize these notes before creating
-the release tag and publishing these assets.
+Both packages identify version **2.3.0** in their manifests and build provenance.
+Previously published archives remain unchanged.

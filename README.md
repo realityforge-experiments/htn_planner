@@ -27,7 +27,7 @@ The repository includes:
 - An editor, language server, hot reload example, tests and benchmarks.
 - Packageable Windows and Linux x64 SDKs with CMake integration.
 
-Version **2.3.0 (in preparation)** adds native negative numeric literals such as
+Version **2.3.0** adds native negative numeric literals such as
 `(!remember -1.0 is_moving)`, precise numeric debugger labels and signed-value
 diagnostics. Subtraction, negation and decrement remain supported. The C runtime
 ABI and atom layout are unchanged from 2.2.0; tools using the C++ compiler AST

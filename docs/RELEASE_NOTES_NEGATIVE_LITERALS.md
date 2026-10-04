@@ -41,4 +41,4 @@ generated modules do not require regeneration for compatibility.
 The compiler AST owns the literal's debug text. Tools that link to the C++ compiler
 frontend must rebuild against the updated headers; runtime consumers are unaffected.
 
-Introduced in HTN Planner 2.3.0. See the [release preparation notes](RELEASE_2_3_0.md).
+Introduced in HTN Planner 2.3.0. See the [release notes](RELEASE_2_3_0.md).
