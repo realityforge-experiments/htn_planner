@@ -2,6 +2,7 @@
 
 #include "Core/HTNCallTermRegistry.h"
 #include "Core/HTNCallTermBindingContext.h"
+#include "Core/HTNTypeConversion.h"
 #include "Translator/HTNCallTermBridge.h"
 #include "Translator/HTNGeneratedPlanner.h"
 
@@ -163,6 +164,10 @@ bool HTNCallTermRegistry::ValidateArguments([[maybe_unused]]const std::string& i
         const std::optional<HTNAtomType>& ExpectedType = inSignature[Index];
         if (ExpectedType && HTNAtomGetType(inArguments[Index]) != *ExpectedType)
         {
+            bool BooleanValue = false;
+            if (*ExpectedType == HTN_ATOM_TYPE_BOOL &&
+                HTNTryParseType(inArguments.GetClientContext(), inArguments[Index], BooleanValue))
+                continue;
             inArguments.SetError(HTNCallTermErrorReason::ArgumentTypeMismatch,
                 static_cast<uint32_t>(Index), static_cast<uint32_t>(*ExpectedType));
             return false;

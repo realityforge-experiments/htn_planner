@@ -139,13 +139,12 @@ HTNAtomOwner Literal(const Form& inForm)
     }
     if (Is(inForm, Type::IDENTIFIER))
         return HTNAtomOwner(HtnSymbol::sGetSymbol(Name(inForm)));
-    if (!Is(inForm, Type::TRUE) && !Is(inForm, Type::FALSE) &&
-        !Is(inForm, Type::NUMBER) && !Is(inForm, Type::STRING))
+    if (!Is(inForm, Type::NUMBER) && !Is(inForm, Type::STRING))
     {
         ErrorRange = inForm.Range;
         Invalid(HTNParserErrorCode::ExpectedLiteral,
             Is(inForm, Type::MINUS) || Is(inForm, Type::DECREMENT) ? HTNNegativeLiteralDiagnostic :
-            "Expected a value: symbol, string, number, boolean, variable or list expression");
+            "Expected a value: symbol, string, number, variable or list expression");
         return HTNAtomOwner("");
     }
     return inForm.Atom;

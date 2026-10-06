@@ -78,7 +78,7 @@ bool HTNWorldStateLexer::Lex(HTNWorldStateLexerContext& ioWorldStateLexerContext
             else if (HTNLexerHelpers::IsLetter(Character))
             {
                 // Identifier
-                static const std::unordered_map<std::string, HTNTokenType> Keywords = {{"call", HTNTokenType::CALL}, {"true", HTNTokenType::TRUE}, {"false", HTNTokenType::FALSE}};
+                static const std::unordered_map<std::string, HTNTokenType> Keywords = {{"call", HTNTokenType::CALL}};
                 LexIdentifier(Keywords, ioWorldStateLexerContext);
                 break;
             }

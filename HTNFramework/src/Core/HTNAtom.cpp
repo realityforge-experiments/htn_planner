@@ -228,7 +228,7 @@ std::string HTNAtomToString(const HTNAtom& inAtom, const bool inShouldDoubleQuot
 {
     switch (inAtom.type)
     {
-    case HTN_ATOM_TYPE_BOOL: return std::format("{}", inAtom.value.bool_value != 0u);
+    case HTN_ATOM_TYPE_BOOL: return inAtom.value.bool_value != 0u ? "1" : "0";
     case HTN_ATOM_TYPE_INT: return std::to_string(inAtom.value.int_value);
     case HTN_ATOM_TYPE_FLOAT:
     {
@@ -543,7 +543,13 @@ extern "C" int HTNAtom_Equals(const HTNAtom* inLeft, const HTNAtom* inRight)
     if (!inLeft || !inRight)
         return inLeft == inRight;
     if (inLeft->type != inRight->type)
+    {
+        if (inLeft->type == HTN_ATOM_TYPE_BOOL && inRight->type == HTN_ATOM_TYPE_INT)
+            return inRight->value.int_value == (inLeft->value.bool_value ? 1 : 0);
+        if (inLeft->type == HTN_ATOM_TYPE_INT && inRight->type == HTN_ATOM_TYPE_BOOL)
+            return inLeft->value.int_value == (inRight->value.bool_value ? 1 : 0);
         return 0;
+    }
 
     switch (inLeft->type)
     {

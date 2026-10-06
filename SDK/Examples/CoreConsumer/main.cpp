@@ -38,6 +38,44 @@ static bool ValidateFactWrites()
         World.GetFactArgumentsCollectionSize("package_fact_write", 3u) == 0u;
 }
 
+static bool ValidateBooleanCompatibility()
+{
+    HTNFactRegistry Registry;
+    const auto* Fact = HtnSymbol::sGetSymbol("package_boolean");
+    Registry.Register(Fact);
+    HTNWorldState World;
+    World.SetFactRegistry(&Registry);
+    bool Parsed = false;
+    if (!HTNTryParseType(HTNAtomOwner(1), Parsed) || !Parsed ||
+        !HTNTryParseType(HTNAtomOwner(0), Parsed) || Parsed ||
+        HTNTryParseType(HTNAtomOwner(2), Parsed) || HTNTryParseType(HTNAtomOwner(1.0f), Parsed)) return false;
+    if (!World.WriteFact(Fact, true, false) ||
+        !World.ContainsFactArguments("package_boolean", std::array<HTNAtomOwner, 2>{1, 0})) return false;
+    const auto& Row = World.FindFactArgumentsTables(Fact)->at(2).GetFactArgumentsCollection().front();
+    return Row[0].IsType<bool>() && Row[1].IsType<bool>();
+}
+
+#ifdef HTN_DEBUG_DECOMPOSITION
+static bool ValidateUnregisteredFactWrites()
+{
+    HTNFactRegistry Registry;
+    HTNWorldState World;
+    World.SetFactRegistry(&Registry);
+    const auto* Fact = HtnSymbol::sGetSymbol("package_unregistered_fact");
+    int32 Offset = 10;
+    if (World.WriteFact(Fact) || World.WriteFactWithContext(&Offset, Fact, PackageFactValue{2, false})) return false;
+    const auto It = World.GetUnregisteredFacts().find(Fact);
+    if (It == World.GetUnregisteredFacts().end() || !World.GetFacts().empty() ||
+        World.FindFactArgumentsTables(Fact) || World.GetFactArgumentsCollectionSize("package_unregistered_fact", 1u) != 0u ||
+        It->second[0].GetFactArgumentsCollectionSize() != 1u || It->second[1].GetFactArgumentsCollectionSize() != 1u ||
+        It->second[1].GetFactArgumentsCollection().front()[0].GetValue<int32>() != 12) return false;
+    if (World.ClearFact(Fact, 1u) || It->second[1].GetFactArgumentsCollectionSize() != 0u ||
+        It->second[0].GetFactArgumentsCollectionSize() != 1u) return false;
+    World.RemoveAllFacts();
+    return It->second[0].GetFactArgumentsCollectionSize() == 0u;
+}
+#endif
+
 struct MissingReport
 {
     int Count = 0;
@@ -121,8 +159,14 @@ static bool ValidateMissingCallTerms()
 
 int main()
 {
+#ifdef HTN_DEBUG_DECOMPOSITION
+    if (!ValidateUnregisteredFactWrites()) return 15;
+    std::puts("Unregistered fact inspection: PASS");
+#endif
     if (!ValidateMissingCallTerms()) return 11;
     if (!ValidateFactWrites()) return 10;
+    if (!ValidateBooleanCompatibility()) return 16;
+    std::puts("Boolean and binary integer compatibility: PASS");
     const HTNGeneratedPlannerDefinition* Definition = CreatePackageCoreConsumerHTN_GetDefinition();
     if (!HTNGeneratedPlanner_ValidateDefinition(Definition))
         return 1;

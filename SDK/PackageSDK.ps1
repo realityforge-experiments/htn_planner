@@ -132,6 +132,7 @@ Copy-PackageFile "$RepositoryRoot/docs/GENERATED_INSTRUMENTATION.md" 'docs/GENER
 Copy-PackageFile "$RepositoryRoot/docs/RELEASE_2_1_0.md" 'docs/RELEASE_2_1_0.md'
 Copy-PackageFile "$RepositoryRoot/docs/RELEASE_2_2_0.md" 'docs/RELEASE_2_2_0.md'
 Copy-PackageFile "$RepositoryRoot/docs/RELEASE_2_3_0.md" 'docs/RELEASE_2_3_0.md'
+Copy-PackageFile "$RepositoryRoot/docs/RELEASE_2_4_0.md" 'docs/RELEASE_2_4_0.md'
 Copy-PackageFile "$RepositoryRoot/docs/RELEASE_NOTES_NEGATIVE_LITERALS.md" 'docs/RELEASE_NOTES_NEGATIVE_LITERALS.md'
 Copy-PackageFile "$RepositoryRoot/docs/COMPILER_IR.md" 'docs/COMPILER_IR.md'
 Copy-PackageFile "$RepositoryRoot/docs/GENERATED_DEBUGGER.md" 'docs/GENERATED_DEBUGGER.md'

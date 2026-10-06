@@ -848,9 +848,9 @@ TEST_P(HTNGeneratedEquivalenceTest, GeneratedProducesExpectedResult)
     else if (std::string_view(TestCase.TestName) == "ConstantList")
     {
         const std::vector<std::string> ExpectedPlan = {
-            "!print_original (patrol 3 true (10.0 20.0 30.0))",
-            "!print_added (patrol 3 true (10.0 20.0 30.0) \"return\")",
-            "!print_removed (patrol true (10.0 20.0 30.0) \"return\")",
+            "!print_original (patrol 3 1 (10.0 20.0 30.0))",
+            "!print_added (patrol 3 1 (10.0 20.0 30.0) \"return\")",
+            "!print_removed (patrol 1 (10.0 20.0 30.0) \"return\")",
             "!print_element (10.0 20.0 30.0)",
             "!print_size 5",
             "!print_cleared ()"};
@@ -1832,7 +1832,7 @@ TEST(HTNAssignmentExecutionTest, EvaluatesValuesRollbackNestedCallsAndFailure)
     ASSERT_TRUE(Database.GetWorldState().WriteFact(HtnSymbol::sGetSymbol("assignment_candidate"), 2));
     struct Case { const char* Entry; const char* Expected; int Calls; };
     for (const auto& Test : {
-        Case{"assignment_values", "!assignment_values main_threat 5 6 false", 1},
+        Case{"assignment_values", "!assignment_values main_threat 5 6 0", 1},
         Case{"assignment_backtracking", "!assignment_result 3", 2},
         Case{"assignment_nested_calls", "!assignment_result 5", 2},
         Case{"assignment_failure", "!assignment_result 9", 0},

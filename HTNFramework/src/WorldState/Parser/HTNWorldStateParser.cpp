@@ -13,7 +13,7 @@
  * Backus Naur Form (BNF)
  * <fact> ::= <identifier> <argument>* <end-of-line>
  * <identifier> ::= 'identifier'
- * <argument> ::= ('(' <argument>+ ')') | 'true' | 'false' | 'number' | 'string' | 'identifier-as-symbol'
+ * <argument> ::= ('(' <argument>+ ')') | 'number' | 'string' | 'identifier-as-symbol'
  */
 // clang-format on
 
@@ -119,14 +119,6 @@ bool HTNWorldStateParser::ParseArgument(HTNWorldStateParserContext& ioWorldState
             ioWorldStateParserContext.SetPosition(StartPosition);
             return false;
         }
-    }
-    else if (const HTNToken* TrueToken = ParseToken(HTNTokenType::TRUE, ioWorldStateParserContext))
-    {
-        Argument = TrueToken->GetValue();
-    }
-    else if (const HTNToken* FalseToken = ParseToken(HTNTokenType::FALSE, ioWorldStateParserContext))
-    {
-        Argument = FalseToken->GetValue();
     }
     else if (const HTNToken* NumberToken = ParseToken(HTNTokenType::NUMBER, ioWorldStateParserContext))
     {

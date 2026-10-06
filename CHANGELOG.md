@@ -3,6 +3,31 @@
 All notable changes to HTN Planner are documented in this file. Compatibility
 exceptions are called out explicitly in each release.
 
+## 2.4.0 - Unreleased
+
+- Bare `true` and `false` are ordinary symbols in domains and `.worldstate` files.
+  Use `0`/`1` or explicitly declared `@true`/`@false` constants for boolean data.
+  Migrate old boolean literals and regenerate domains before upgrading.
+- BOOL values match INT `0`/`1` symmetrically in facts, equality, lists and axiom
+  bindings. Typed `bool` arguments accept these two integers; other integers,
+  floats and symbols are rejected. Stored atom types do not change.
+- Standalone callterm conditions still require BOOL. A BOOL false result fails
+  the condition; assigning it binds the result and continues. `(== 0 false)` fails.
+- Debugger, atom text and Visual Studio natvis display BOOL values as `0`/`1`,
+  including nested lists. Symbols named `true`/`false` retain their spelling.
+
+- Retain unregistered `WriteFact` / `WriteFactWithContext` rows for inspection
+  through `GetUnregisteredFacts()` when `HTN_DEBUG_DECOMPOSITION` is enabled.
+  Writes still return `false`; planner queries and `GetFacts()` never see these rows.
+- Reuse transactional argument conversion, including client-context converters.
+  `ClearFact` and `RemoveAllFacts` clear the captured rows alongside normal facts.
+- Cover zero/nonzero arities, query isolation, failed conversion, registry changes,
+  cleanup and instrumented SDK consumers. Plain builds retain their existing behavior.
+- **Compatibility:** the instrumented C++ `HTNWorldState` layout changes; rebuild
+  clients and use matching 2.4.0 headers/libraries. The C runtime ABI, generated
+  domain format and atom layout are unchanged. No new SDK variants are introduced.
+- See [2.4.0 release notes and validation status](docs/RELEASE_2_4_0.md).
+
 ## 2.3.0 - 2026-10-04
 
 - Accept native negative integer and float literals in every numeric value context,

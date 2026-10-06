@@ -183,13 +183,42 @@ struct HTNTypeConverter<HTNAtomListOwner>
         } \
     }
 
-HTN_DECLARE_DIRECT_TYPE_CONVERSION(bool, HTNAtomType::HTN_ATOM_TYPE_BOOL, "bool");
 HTN_DECLARE_DIRECT_TYPE_CONVERSION(int32, HTNAtomType::HTN_ATOM_TYPE_INT, "int32");
 HTN_DECLARE_DIRECT_TYPE_CONVERSION(float, HTNAtomType::HTN_ATOM_TYPE_FLOAT, "float");
 HTN_DECLARE_DIRECT_TYPE_CONVERSION(std::string, HTNAtomType::HTN_ATOM_TYPE_STRING, "string");
 HTN_DECLARE_DIRECT_TYPE_CONVERSION(HTNAtomList, HTNAtomType::HTN_ATOM_TYPE_LIST, "HTNAtomList");
 
 #undef HTN_DECLARE_DIRECT_TYPE_CONVERSION
+
+template<>
+struct HTNTypeTraits<bool>
+{
+    static constexpr bool IsSupported      = true;
+    static constexpr bool HasFixedAtomType = true;
+    static constexpr HTNAtomType AtomType  = HTN_ATOM_TYPE_BOOL;
+    static constexpr const char* Name      = "bool";
+};
+
+template<>
+struct HTNTypeConverter<bool>
+{
+    static bool FromAtom(void*, const HTNAtom& inAtom, bool& outValue)
+    {
+        if (inAtom.type == HTN_ATOM_TYPE_BOOL)
+            outValue = inAtom.value.bool_value != 0u;
+        else if (inAtom.type == HTN_ATOM_TYPE_INT && (inAtom.value.int_value == 0 || inAtom.value.int_value == 1))
+            outValue = inAtom.value.int_value != 0;
+        else
+            return false;
+        return true;
+    }
+
+    static bool ToAtom(void*, const bool& inValue, HTNAtom& outAtom)
+    {
+        HTNAtom_SetBool(&outAtom, inValue ? 1u : 0u);
+        return true;
+    }
+};
 
 template<>
 struct HTNTypeTraits<const HtnSymbol*>

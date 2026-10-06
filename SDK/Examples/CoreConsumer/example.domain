@@ -1,11 +1,18 @@
 (:domain PackageCoreConsumer top_level_domain
 
+    (:constants (true 1) (false 0))
+
     (:method (boolean_condition) top_level_method
         (branch (and (call condition_value)) ((!checked))))
 
     (:method (run) top_level_method
         (branch
-            ()
+            (and
+                (== @true 1)
+                (== 0 @false)
+                (!= 0 false)
+                (!= true 0)
+            )
             (
                 (!step "one")
                 (!step "two")

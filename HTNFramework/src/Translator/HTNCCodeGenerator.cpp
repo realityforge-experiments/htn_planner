@@ -579,6 +579,10 @@ bool TryEvaluateStaticBuiltinComparison(const HTNCompilerIR& inBuilder, const Co
         bool Equal = false;
         if (LeftNumeric && RightNumeric)
             Equal = NumericValue(*Left) == NumericValue(*Right);
+        else if (Left->AtomType == HTN_ATOM_TYPE_BOOL && Right->AtomType == HTN_ATOM_TYPE_INT)
+            Equal = Right->IntValue == (Left->BoolValue ? 1 : 0);
+        else if (Left->AtomType == HTN_ATOM_TYPE_INT && Right->AtomType == HTN_ATOM_TYPE_BOOL)
+            Equal = Left->IntValue == (Right->BoolValue ? 1 : 0);
         else if (Left->AtomType == Right->AtomType)
         {
             switch (Left->AtomType)

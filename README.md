@@ -27,11 +27,20 @@ The repository includes:
 - An editor, language server, hot reload example, tests and benchmarks.
 - Packageable Windows and Linux x64 SDKs with CMake integration.
 
-Version **2.3.0** adds native negative numeric literals such as
-`(!remember -1.0 is_moving)`, precise numeric debugger labels and signed-value
-diagnostics. Subtraction, negation and decrement remain supported. The C runtime
-ABI and atom layout are unchanged from 2.2.0; tools using the C++ compiler AST
-must be rebuilt. See the [2.3.0 release notes](docs/RELEASE_2_3_0.md).
+Version **2.4.0** is being prepared. Domains use `0`/`1` for boolean matching;
+bare `true`/`false` are ordinary symbols. The debugger and natvis display BOOL
+as `0`/`1`. Migrate old boolean literals and regenerate domains. Standalone
+callterm conditions continue to require a BOOL result.
+
+Instrumented builds retain facts that the
+domain does not reference in `HTNWorldState::GetUnregisteredFacts()` for inspection.
+Those writes still return `false`, and the planner cannot query the captured rows.
+Plain builds retain their previous behavior. The instrumented C++ world-state
+layout changes: rebuild clients with matching headers and libraries. The C runtime
+and generated-domain ABIs remain unchanged. See the [2.4.0 release notes](docs/RELEASE_2_4_0.md).
+
+Native negative literals, numeric debugger labels and their compiler-tool migration
+requirements are documented in the [2.3.0 release notes](docs/RELEASE_2_3_0.md).
 For Linux builds, hot reload integration and Windows Natvis distribution, see
 the [2.2.0 release notes](docs/RELEASE_2_2_0.md).
 For the runtime-list, callterm and generated-code features introduced in 2.1.0,

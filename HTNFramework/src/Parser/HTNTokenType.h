@@ -48,8 +48,6 @@ enum class HTNTokenType : uint8
     ALT,
     NOT,
     CALL,
-    TRUE,
-    FALSE,
 
     IDENTIFIER,
     NUMBER,

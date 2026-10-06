@@ -55,6 +55,9 @@ static bool RunCoverage(GetDefinitionFn inGet)
     HTNCallTermRegistry Registry;
     Registry.Bind("probe", [&Calls](const HTNCallTermArguments&) { ++Calls; return HTNAtomOwner(true); });
     Registry.Bind("identity", [](const HTNCallTermArguments&) { return HTNAtomOwner(2); });
+    Registry.Bind("boolean_value", [](const HTNCallTermArguments& inArguments) {
+        return HTNAtomOwner(HTNAtomGetValue<int32>(inArguments[0]) != 0);
+    });
     Registry.Bind("empty_list", [](const HTNCallTermArguments&) {
         HTNAtomOwner Result;
         HTNAtom_SetEmptyList(Result.Get());

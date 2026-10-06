@@ -180,7 +180,7 @@ bool HTNCompilerDomainLexer::Lex(HTNCompilerDomainLexerContext& ioDomainLexerCon
                     {"axiom", HTNTokenType::HTN_AXIOM},   {"constants", HTNTokenType::HTN_CONSTANTS},
                     {"and", HTNTokenType::AND},           {"or", HTNTokenType::OR},
                     {"alt", HTNTokenType::ALT},           {"not", HTNTokenType::NOT},
-                    {"call", HTNTokenType::CALL},         {"true", HTNTokenType::TRUE},         {"false", HTNTokenType::FALSE}};
+                    {"call", HTNTokenType::CALL}};
                 LexIdentifier(Keywords, ioDomainLexerContext);
                 break;
             }

@@ -67,6 +67,13 @@ evaluation. The expression is evaluated once per attempt; failure or an unbound
 result fails the condition without publishing a destination binding. A bound
 boolean `false` is a valid assigned value, not a failed assignment.
 
+For example, when the host returns C++ `false`, `(call is_entity_alive ?entity)`
+fails as a condition, but `(= ?result (call is_entity_alive ?entity))` binds the
+BOOL result and continues. `(== ?result 0)` can then test that result. Bare
+`false` in domain source is an ordinary SYMBOL: `(= ?result false)` assigns
+that symbol, not a BOOL. Named integer constants such as `@false` must be
+explicitly declared, for example `(:constants (true 1) (false 0))`.
+
 Bindings participate in normal backtracking and are restored when an alternative
 is abandoned. A retry may evaluate the initializer again. External effects of
 callterms are not rolled back by variable restoration.

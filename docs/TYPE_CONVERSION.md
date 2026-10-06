@@ -58,6 +58,26 @@ prevent the callable from running. A failed return conversion produces an unboun
 result; effects already performed by the callable are not rolled back. Conversion
 failures are not missing-callterm reports.
 
+## Boolean arguments
+
+`HTNTryParseType(context, atom, boolValue)` accepts BOOL or an INT whose value is
+exactly `0` or `1`. Typed static and member callterm bindings accept the same
+inputs for C++ `bool` parameters. Other integers, floats, strings, symbols,
+lists and unbound atoms are rejected. Failed conversions leave the destination
+unchanged. C++ `bool` converts back to BOOL; integer destinations remain strict.
+
+Raw bindings with a BOOL signature also accept INT `0`/`1`, but receive the
+original atom. Use `HTNTryParseType` to read it rather than assuming its union
+member or type. `HTNAtomIsType<bool>` still tests the actual BOOL type.
+Callterms used as independent conditions must still return BOOL.
+
+World-state matching and `HTNAtom_Equals` treat BOOL false/true as equivalent to
+INT 0/1, including nested lists, without converting stored values. Writes of
+C++ `bool` remain BOOL and writes of integers remain INT.
+In domain and `.worldstate` source, bare `true`/`false` are SYMBOL values and
+therefore fail boolean conversion. Use numeric `1`/`0` or user-defined constants
+such as `(:constants (true 1) (false 0))`, referenced as `@true`/`@false`.
+
 ## Ownership and concurrency
 
 The context is a borrowed `void*`, also used by the missing-callterm report callback.
@@ -102,10 +122,14 @@ No engine source or distributed SDK is updated by this change.
 `World.WriteFactWithContext(nullptr, Fact, values...)`. To resolve engine values
 through client services, use `World.WriteFactWithContext(&Services, Fact, Entity)`.
 Both paths convert each argument through `HTNTryToAtom(context, value, atom)`.
-The symbol must belong to the world's fact registry, as before.
+The symbol must belong to the world's fact registry for the write to return
+`true` and become visible to the planner. With `HTN_DEBUG_DECOMPOSITION`, valid
+unregistered writes are converted and retained in `GetUnregisteredFacts()` for
+inspection, but still return `false`. Without this macro they return `false`
+before conversion, as before. See the [2.4.0 release notes](RELEASE_2_4_0.md).
 
 Arguments are owned temporaries until all conversions succeed and produce bound
-atoms. Failure returns `false` without inserting a row or creating fact storage;
+atoms. Conversion failure returns `false` without inserting a row or creating fact storage;
 previous rows and other arities remain unchanged. Conversion short-circuits on
 failure and releases temporary owned values. Converter side effects on client
 services are outside this world-state transaction and are not rolled back.

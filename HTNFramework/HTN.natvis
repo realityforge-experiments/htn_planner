@@ -26,7 +26,7 @@
 
   <Type Name="HTNAtom">
     <DisplayString Condition="type == 0">Unbound</DisplayString>
-    <DisplayString Condition="type == 1">Bool: {value.bool_value != 0}</DisplayString>
+    <DisplayString Condition="type == 1">Bool: {(int)(value.bool_value != 0)}</DisplayString>
     <DisplayString Condition="type == 2">Int: {value.int_value}</DisplayString>
     <DisplayString Condition="type == 3">Float: {value.float_value,g}</DisplayString>
     <DisplayString Condition="type == 4">String: {value.string_value.data,s}</DisplayString>
@@ -35,7 +35,7 @@
     <DisplayString Condition="type == 6">List: {value.list_value}</DisplayString>
     <Expand>
       <Item Name="[Type]">type</Item>
-      <Item Name="[Value]" Condition="type == 1">value.bool_value != 0</Item>
+      <Item Name="[Value]" Condition="type == 1">(int)(value.bool_value != 0)</Item>
       <Item Name="[Value]" Condition="type == 2">value.int_value</Item>
       <Item Name="[Value]" Condition="type == 3">value.float_value</Item>
       <Item Name="[Value]" Condition="type == 4">value.string_value.data,s</Item>
@@ -48,7 +48,7 @@
 
   <Type Name="HTNAtomOwner">
     <DisplayString Condition="((HTNAtom*)mStorage)->type == 0">Unbound</DisplayString>
-    <DisplayString Condition="((HTNAtom*)mStorage)->type == 1">Bool: {((HTNAtom*)mStorage)->value.bool_value != 0}</DisplayString>
+    <DisplayString Condition="((HTNAtom*)mStorage)->type == 1">Bool: {(int)(((HTNAtom*)mStorage)->value.bool_value != 0)}</DisplayString>
     <DisplayString Condition="((HTNAtom*)mStorage)->type == 2">Int: {((HTNAtom*)mStorage)->value.int_value}</DisplayString>
     <DisplayString Condition="((HTNAtom*)mStorage)->type == 3">Float: {((HTNAtom*)mStorage)->value.float_value,g}</DisplayString>
     <DisplayString Condition="((HTNAtom*)mStorage)->type == 4">String: {((HTNAtom*)mStorage)->value.string_value.data,s}</DisplayString>

@@ -181,6 +181,21 @@ TEST_F(HTNBooleanCallTermTest, FailSilentlyDoesNotReportOrLog)
     EXPECT_EQ(Report.Count, 0);
 }
 
+TEST_F(HTNBooleanCallTermTest, BinaryIntegersAndBooleanSymbolsStillRequireExplicitComparison)
+{
+    for (const HTNAtomOwner& Result : {HTNAtomOwner(0), HTNAtomOwner(1),
+             HTNAtomOwner(HtnSymbol::sGetSymbol("true")), HTNAtomOwner(HtnSymbol::sGetSymbol("false"))})
+    {
+        Value = Result;
+        const int Before = Report.Count;
+        EXPECT_EQ(Unit.DecomposeTopLevelMethod(), HTN_DECOMPOSITION_NO_PLAN);
+        ASSERT_EQ(Report.Count, Before + 1);
+        CheckReport("condition");
+        EXPECT_EQ(Unit.DecomposeTopLevelMethod(HtnSymbol::sGetSymbol("comparison")), HTN_DECOMPOSITION_SUCCEEDED);
+        EXPECT_EQ(Report.Count, Before + 1);
+    }
+}
+
 TEST_F(HTNBooleanCallTermTest, DeferredCallsReportAtExecutionWithTheirOwnSource)
 {
     Value = MakeValue(0);

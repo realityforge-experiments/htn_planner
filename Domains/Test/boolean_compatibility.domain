@@ -1,0 +1,86 @@
+// Copyright (c) 2026 Jose Antonio Escribano joseantonioescribanoayllon@gmail.com
+
+(:domain BooleanCompatibility top_level_domain
+    (:constants
+        (true 1)
+        (false 0)
+    )
+
+    (:method (run) top_level_method
+        (branch
+            (and
+                (flags ?enabled ?disabled)
+                (flags 1 0)
+                (numeric_flags @true @false)
+                (numeric_flags ?enabled ?disabled)
+                (== ?enabled 1)
+                (== 1 ?enabled)
+                (== ?enabled @true)
+                (== ?disabled @false)
+                (== 0 @false)
+                (== @true 1)
+                (!= false 0)
+                (!= 0 false)
+                (!= true 1)
+                (!= 1 true)
+                (!= true 0)
+                (!= false 1)
+                (!= true 2)
+                (!= false -1)
+                (!= true 1.0)
+                (== (true (false)) (true (false)))
+                (mixed_flags ?list)
+                (== ?list (true 1 false 0))
+                (call accept_flags 1 0)
+                (call accept_flags ?enabled ?disabled)
+                (= ?sum (+ 1 1))
+                (== ?sum 2)
+                (#check_flag 1)
+            )
+            ((!values ?enabled ?disabled 1 0 true false @true @false ?sum))
+        )
+    )
+
+    (:axiom (check_flag ?inp_flag)
+        (and (== ?inp_flag @true))
+    )
+
+    (:method (backtrack) top_level_method
+        (branch
+            (and
+                (candidate ?id ?flag)
+                (== ?flag 1)
+                (= ?result (call alive_for_candidate ?id))
+                (== ?result @false)
+                (selected ?id)
+            )
+            ((!chosen ?id ?flag ?result))
+        )
+    )
+
+    (:method (deferred) top_level_method
+        (branch () ((&later 1)))
+    )
+
+    (:method (later ?inp_flag)
+        (branch
+            (and (== ?inp_flag @true) (call accept_flags ?inp_flag 0)
+                 (= ?result (call is_entity_alive 7)) (== ?result @false))
+            ((!later ?inp_flag ?result))
+        )
+    )
+
+    (:method (condition) top_level_method
+        (branch (and (call is_entity_alive 7)) ((!alive))))
+    (:method (assignment) top_level_method
+        (branch (and (= ?result (call is_entity_alive 7)) (== ?result @false)
+                     (!= ?result false)) ((!assigned ?result))))
+    (:method (symbol_equals_zero) top_level_method
+        (branch (and (== 0 false)) ((!unexpected))))
+    (:method (symbol_equals_one) top_level_method
+        (branch (and (== true 1)) ((!unexpected))))
+    (:method (symbol_assignment) top_level_method
+        (branch (and (= ?result false) (== ?result false)) ((!symbol ?result))))
+    (:method (invalid_bool_argument) top_level_method
+        (branch (and (call accept_flags true false)) ((!unexpected))))
+)

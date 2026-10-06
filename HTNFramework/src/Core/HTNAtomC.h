@@ -154,6 +154,8 @@ int  HTNAtom_SetString(HTNAtom* ioAtom, const char* inData, uint32_t inSize);
 int  HTNAtom_SetListCopy(HTNAtom* ioAtom, const HTNAtomList* inList);
 void HTNAtom_SetListMove(HTNAtom* ioAtom, HTNAtomList* inList);
 void HTNAtom_Unbind(HTNAtom* ioAtom);
+/* Equality preserves types but treats BOOL false/true as equal to INT 0/1,
+ * including list elements. Other cross-type pairs remain unequal. */
 int  HTNAtom_Equals(const HTNAtom* inLeft, const HTNAtom* inRight);
 HTNAtomType HTNAtom_GetType(const HTNAtom* inAtom);
 int  HTNAtom_IsBound(const HTNAtom* inAtom);

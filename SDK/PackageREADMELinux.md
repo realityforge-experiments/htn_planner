@@ -1,9 +1,20 @@
 # HTN SDK for Linux x86_64
 
-Version 2.3.0 adds native negative numeric literals and precise numeric debugger
-labels. The C runtime API/ABI and atom layout are unchanged from 2.2.0. Rebuild
-tools using the C++ compiler AST and translate domains that adopt the new syntax.
-See [2.3.0 compatibility and release notes](docs/RELEASE_2_3_0.md).
+Domains use `0`/`1` for boolean matching and typed C++ `bool` arguments. Bare
+`true`/`false` are ordinary symbols; migrate old boolean literals and regenerate
+domains. Standalone callterm conditions still require BOOL; assigning a BOOL
+false result succeeds. Debugger and natvis display BOOL as `0`/`1` without
+changing its stored type. The C ABI and atom layout are unchanged.
+
+Version 2.4.0 retains unregistered world-state writes for inspection when
+`HTN_DEBUG_DECOMPOSITION` is enabled. Access them through `GetUnregisteredFacts()`;
+writes still return `false` and the planner cannot query these rows. Plain variants
+retain their previous behavior. Rebuild instrumented C++ clients with matching
+2.4.0 headers/libraries: the `HTNWorldState` layout changes. The C runtime ABI,
+generated-domain format and atom layout are unchanged from 2.3.0.
+See [2.4.0 compatibility and release notes](docs/RELEASE_2_4_0.md), including the
+current validation status. Upgrades from before 2.3.0 must also follow its
+[compiler-tool migration notes](docs/RELEASE_2_3_0.md).
 
 The exact version, compiler and ABI contract are in `manifest.json`.
 Validated on Ubuntu 24.04 with GCC 14 / Clang 18 and libstdc++, C++20 hosts and

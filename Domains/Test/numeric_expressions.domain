@@ -267,7 +267,7 @@
                 (= ?number (+ 2 3))
                 (= ?copy ?number)
                 (= ?result (call assignment_probe ?copy))
-                (= ?flag false)
+                (= ?flag 0)
             )
             ((!assignment_values ?kind ?number ?result ?flag))
         )

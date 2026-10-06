@@ -75,8 +75,9 @@ public:
     HTN_NODISCARD HTNFactSlot FindFactSlot(const HtnSymbol* inFact) const;
 
     // Appends one fact row using an interned symbol. If the fact is not referenced
-    // by the current domain, nothing is written and false is returned. Duplicate
-    // rows are intentionally preserved.
+    // by the current domain, false is returned. With HTN_DEBUG_DECOMPOSITION,
+    // those rows are retained separately for inspection only. Duplicate rows
+    // are intentionally preserved.
     template<typename... TArgs>
     bool WriteFact(const HtnSymbol* inFact, TArgs&&... inArguments);
 
@@ -151,12 +152,20 @@ public:
     // Returns the facts
     HTN_NODISCARD const HTNFacts& GetFacts() const;
 
+#ifdef HTN_DEBUG_DECOMPOSITION
+    // Returns unregistered writes for inspection only; planner queries never use these rows.
+    HTN_NODISCARD const HTNFacts& GetUnregisteredFacts() const;
+#endif
+
 private:
     HTNFactArgumentsTables& FindOrCreateFactArgumentsTables(const HtnSymbol* inFact);
 
     HTNFacts mFacts;
     std::uint64_t mFactStorageGeneration = 1u;
     const HTNFactRegistry* mFactRegistry = nullptr;
+#ifdef HTN_DEBUG_DECOMPOSITION
+    HTNFacts mUnregisteredFacts;
+#endif
 };
 
 inline void HTNFactArgumentsTable::RemoveAllFactArguments()
@@ -299,7 +308,11 @@ template<typename... TArgs>
 bool HTNWorldState::WriteFactWithContext(void* inClientContext, const HtnSymbol* inFact, TArgs&&... inArguments)
 {
     const HTNFactSlot FactSlot = FindFactSlot(inFact);
+#ifdef HTN_DEBUG_DECOMPOSITION
+    if (!inFact)
+#else
     if (FactSlot == HTN_INVALID_FACT_SLOT || !inFact)
+#endif
         return false;
 
     static_assert(sizeof...(TArgs) < HTNWorldStateHelpers::kFactArgumentsSize,
@@ -312,6 +325,14 @@ bool HTNWorldState::WriteFactWithContext(void* inClientContext, const HtnSymbol*
     if (!Converted)
         return false;
 
+#ifdef HTN_DEBUG_DECOMPOSITION
+    if (FactSlot == HTN_INVALID_FACT_SLOT)
+    {
+        mUnregisteredFacts[inFact][sizeof...(TArgs)].AddFactArguments(Arguments);
+        return false;
+    }
+#endif
+
     HTNFactArgumentsTables& Tables = FindOrCreateFactArgumentsTables(inFact);
     HTNFactArgumentsTable& Table = Tables[sizeof...(TArgs)];
     Table.AddFactArguments(Arguments);
@@ -320,6 +341,15 @@ bool HTNWorldState::WriteFactWithContext(void* inClientContext, const HtnSymbol*
 
 inline bool HTNWorldState::ClearFact(const HtnSymbol* inFact, const size inFactArgumentsSize)
 {
+#ifdef HTN_DEBUG_DECOMPOSITION
+    if (inFact && inFactArgumentsSize < HTNWorldStateHelpers::kFactArgumentsSize)
+    {
+        const auto It = mUnregisteredFacts.find(inFact);
+        if (It != mUnregisteredFacts.end())
+            It->second[inFactArgumentsSize].RemoveAllFactArguments();
+    }
+#endif
+
     const HTNFactSlot FactSlot = FindFactSlot(inFact);
     if (FactSlot == HTN_INVALID_FACT_SLOT || !inFact || inFactArgumentsSize >= HTNWorldStateHelpers::kFactArgumentsSize)
         return false;
@@ -350,6 +380,13 @@ inline void HTNWorldState::RemoveAllFacts()
         for (HTNFactArgumentsTable& Table : Fact.second)
             Table.RemoveAllFactArguments();
     }
+#ifdef HTN_DEBUG_DECOMPOSITION
+    for (auto& Fact : mUnregisteredFacts)
+    {
+        for (HTNFactArgumentsTable& Table : Fact.second)
+            Table.RemoveAllFactArguments();
+    }
+#endif
 }
 
 template<typename T>
@@ -414,3 +451,10 @@ inline const HTNFacts& HTNWorldState::GetFacts() const
 {
     return mFacts;
 }
+
+#ifdef HTN_DEBUG_DECOMPOSITION
+inline const HTNFacts& HTNWorldState::GetUnregisteredFacts() const
+{
+    return mUnregisteredFacts;
+}
+#endif

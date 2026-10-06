@@ -1,10 +1,10 @@
 # Domain language guide
 
-This guide describes the domain language supported by HTN Planner **2.3.0**.
+This guide describes the domain language supported by HTN Planner **2.4.0**.
 It starts with a complete example, then explains the syntax and execution rules.
 The linked feature documents provide more detail and migration notes.
 
-Native negative numeric literals are new in 2.3.0; see the
+Native negative numeric literals were introduced in 2.3.0; see the
 [syntax and compatibility notes](RELEASE_NOTES_NEGATIVE_LITERALS.md).
 
 The language is a small, declarative **domain-specific language (DSL)** for
@@ -128,8 +128,8 @@ and `method` are reserved.
 | --- | --- | --- |
 | Integer | `42`, `-1` | Signed 32-bit runtime value. |
 | Float | `0.2`, `10.0`, `-0.5` | Single-precision runtime value. |
-| Boolean | `true`, `false` | No implicit truthiness conversion. |
-| Symbol | `moving_to_enemy` | An interned identifier, distinct from a string. |
+| Boolean (runtime) | Returned by a host callterm or bound from a fact | Matches integer `1`/`0`; no boolean literal syntax. |
+| Symbol | `moving_to_enemy`, `true`, `false` | An interned identifier, distinct from a string or boolean. |
 | String | `"Moving to enemy"` | Quoted text. |
 | List | `(patrol 3 true (1.0 2.0 3.0))` | Ordered, heterogeneous, nestable values. |
 | Variable read | `?position` | Uses the current binding. |
@@ -318,7 +318,8 @@ is a method input parameter:
 ```
 
 Initializers can be literals, constants, variables, arithmetic, callterms or
-lists. Assigning boolean `false` is valid; a failed or unbound initializer is not.
+lists. Assigning a callterm's BOOL false result is valid; a failed or unbound
+initializer is not. Bare `false` in source is a SYMBOL.
 The previous implicit form `(?value (call get_value))` is invalid.
 
 This example is **intentionally invalid**: assignment is not mutation.
@@ -349,6 +350,32 @@ Integer/float comparisons allow mixed numeric types. Other equality comparisons
 use atom equality; symbols and strings are distinct. Ordering requires numeric
 operands. Unbound values cannot make a comparison succeed. Float equality is
 exact: there is no built-in epsilon or `near` operator in this version.
+
+Runtime BOOL true matches integer `1`, and BOOL false matches integer `0`, in either
+direction. This applies to `==`/`!=`, fact arguments, axiom output matching and
+list elements. No other integer, float, string or symbol is equivalent to a
+boolean. Numeric int/float comparisons retain their existing behavior.
+
+```lisp
+(and
+    (is_visible ?entity 1) // Also matches a fact written with C++ bool true.
+    (= ?alive (call is_entity_alive ?entity))
+    (== ?alive 1)
+    (!= 0 false) // false is a SYMBOL, not a BOOL or INT.
+    (call set_enabled 1) // Accepted when the binding parameter is C++ bool.
+)
+```
+
+Atoms keep their original type: C++ `bool` writes and returns remain BOOL,
+while `0`/`1` remain INT and bare `true`/`false` are SYMBOL. Binding an unbound variable copies that original type;
+matching an already bound variable does not replace its value. The debugger
+displays BOOL as `0`/`1`, including inside lists; symbols named `true`/`false`
+keep their names. Visual Studio's natvis also displays `Bool: 0`/`Bool: 1`.
+This formatting does not change the stored atom type. Integers still work
+in arithmetic; BOOL operands do not gain arithmetic or ordering conversions.
+An independent `(call predicate ...)` condition still requires a BOOL result:
+returning INT `0` or `1` reports `NonBooleanConditionResult`. Compare such a result
+explicitly, for example `(== (call integer_flag) 1)`.
 
 Arithmetic forms produce values and can nest inside comparisons or other value
 positions, including callterm, fact, axiom and task arguments:
@@ -408,10 +435,20 @@ boolean visibility predicate:
 )
 ```
 
-A standalone callterm condition must return a **boolean** atom. `true` succeeds;
-`false` is an ordinary condition failure. A valid non-boolean result reports
+A standalone callterm condition must return a **boolean** atom. A BOOL true result
+succeeds; BOOL false is an ordinary condition failure. A valid non-boolean result reports
 `NonBooleanConditionResult` through the configured error policy, then fails.
 Bind or compare a position, integer, symbol or other non-boolean result explicitly.
+
+```lisp
+(call is_entity_alive ?entity)             // BOOL false fails this condition.
+(= ?result (call is_entity_alive ?entity)) // BOOL false binds successfully.
+```
+
+These are alternative uses of the callterm, not successive conditions: the
+second form continues when a bound result is returned, even BOOL false. A missing,
+failed or unbound result fails the assignment. Returning INT `0`/`1`, or the
+SYMBOL `false`/`true`, does not satisfy the standalone call's BOOL contract.
 
 The host must configure `HTNCallTermErrorPolicy`. Missing registrations, bindings
 or instances and incompatible arguments use the existing callback/reporting
@@ -502,6 +539,25 @@ Declare literal constants inside a domain and reference them with `@`:
 The block name `MovementSettings` groups declarations; the value reference is
 `@search_radius`, not `@MovementSettings::search_radius`. Initializers must be
 literals, including fully literal lists, not runtime expressions.
+
+`true` and `false` are ordinary names and can be declared as numeric constants:
+
+```lisp
+(:constants
+    (true 1)
+    (false 0)
+)
+```
+
+`(== 0 @false)` succeeds, while `(== 0 false)` fails as a condition because
+`false` is a symbol. `@true`/`@false` are user-defined constants, not built-ins;
+they must be declared or included. A definition `(false false)` is also legal,
+but its value is the symbol `false`, not a boolean or zero.
+
+Migration from SDK 2.3.0: replace former boolean literals with `1`/`0` or these
+explicit constants when boolean matching/conversion is intended. Apply the
+same migration to `.worldstate` files. Regenerate and rebuild domain C. The
+runtime BOOL atom type and native C++ `bool` bindings remain supported.
 
 Includes are resolved relative to the including file. They link declarations
 from other domains. Put `(:include "BaseMovement.domain")` before the root domain
@@ -638,4 +694,5 @@ the behavior of example host bindings such as `get_entity_position`.
   initialization validation and runtime reporting.
 - [Generated instrumentation and size](GENERATED_INSTRUMENTATION.md): choose
   debugger/profiling emission and inspect source-size statistics.
-- [2.1.0 release notes](RELEASE_2_1_0.md): compatibility and migration.
+- [SDK variants](SDK_VARIANTS.md): choose the CRT, configuration and instrumentation.
+- [2.4.0 release notes](RELEASE_2_4_0.md): compatibility and migration.
